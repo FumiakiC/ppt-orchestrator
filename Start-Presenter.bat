@@ -30,8 +30,8 @@ set "POWERSHELL_X64=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 :: PowerShellスクリプトの存在確認
 :: -----------------------------------------------
 if not exist "%SCRIPT_NAME%" (
-    echo [エラー] ファイルが見つかりません: %SCRIPT_NAME%
-    echo このバッチと同じフォルダに PowerShell スクリプトを配置してください。
+    echo [Error] File not found: %SCRIPT_NAME%
+    echo Please place the PowerShell script in the same folder as this batch file.
     pause
     exit /b 1
 )
@@ -41,7 +41,7 @@ if not exist "%SCRIPT_NAME%" (
 :: -----------------------------------------------
 net session >nul 2>&1
 if %errorlevel% neq 0 (
-    echo 管理者権限でバッチを再起動します...
+    echo Restarting batch with administrator privileges...
     powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
     exit /b
 )
@@ -50,22 +50,22 @@ if %errorlevel% neq 0 (
 :: 64bit PowerShell が見つからない場合のフォールバック
 :: -----------------------------------------------
 if not exist "%POWERSHELL_X64%" (
-    echo [警告] 64bit PowerShell が見つかりません。既定の powershell.exe を使用します。
+    echo [Warning] 64bit PowerShell not found. Using default powershell.exe.
     set "POWERSHELL_X64=powershell.exe"
 )
 
 echo.
-echo ==== 前処理開始: URLACL と Firewall の設定を行います ====
+echo ==== Starting Pre-processing: Configuring URLACL and Firewall ====
 echo.
 
 :: -----------------------------------------------
 :: URLACL: 既存の URL 予約を削除 → 再登録
 ::  - 競合や不整合を避けるため、毎回クリーンに作り直します
 :: -----------------------------------------------
-echo [URLACL] 削除: %URLACL_URL%（存在しなくてもOK）
+echo [URLACL] Removing: %URLACL_URL% (OK if it doesn't exist)
 netsh http delete urlacl url=%URLACL_URL% >nul 2>&1
 
-echo [URLACL] 追加: %URLACL_URL%
+echo [URLACL] Adding: %URLACL_URL%
 :: URLACL の user は UPN（whoami /upn）を優先、取れない場合は ドメイン\ユーザー を使用
 set "CURRENT_UPN="
 for /f "tokens=1,* delims=:" %%A in ('whoami /upn 2^>nul ^| find ":"') do set "CURRENT_UPN=%%B"
@@ -77,7 +77,7 @@ if defined CURRENT_UPN (
 
 netsh http add urlacl url=%URLACL_URL% user="%CURRENT_UPN%" listen=yes
 if %errorlevel% neq 0 (
-    echo [警告] URLACL の追加に失敗しました。続行しますが、後で権限を確認してください。
+    echo [Warning] Failed to add URLACL. Continuing, but please check permissions later.
 )
 
 :: -----------------------------------------------
@@ -85,16 +85,16 @@ if %errorlevel% neq 0 (
 ::  - RemoteAddress=Any, Profile=Any で「異サブネットからも許可」
 ::  - 既存の同名ルールは削除してから追加
 :: -----------------------------------------------
-echo [FW] 既存ルール削除（同名）: %FW_RULE_NAME%
+echo [FW] Removing existing rule (same name): %FW_RULE_NAME%
 "%POWERSHELL_X64%" -NoProfile -Command ^
   "Get-NetFirewallRule -DisplayName '%FW_RULE_NAME%' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue" >nul 2>&1
 
-echo [FW] 新規ルール追加: %FW_RULE_NAME%
+echo [FW] Adding new rule: %FW_RULE_NAME%
 "%POWERSHELL_X64%" -NoProfile -Command ^
   "New-NetFirewallRule -DisplayName '%FW_RULE_NAME%' -Direction Inbound -Action Allow -Protocol TCP -LocalPort %WEB_PORT% -RemoteAddress Any -Profile Any" >nul 2>&1
 
 if %errorlevel% neq 0 (
-    echo [警告] Firewall ルールの作成でエラーが発生しました。GPOなどで制限されている可能性があります。
+    echo [Warning] Error creating Firewall rule. It may be restricted by GPO or other policies.
 )
 
 :: -----------------------------------------------
@@ -102,15 +102,15 @@ if %errorlevel% neq 0 (
 ::  - PowerShell側のWebリスナー起動前なので、空でも正常
 :: -----------------------------------------------
 echo.
-echo [INFO] ポート %WEB_PORT% の現行バインド状況（開始前の参考情報）:
-netstat -ano | findstr ":%WEB_PORT%" || echo   (該当なし)
+echo [INFO] Current binding status for port %WEB_PORT% (reference before start):
+netstat -ano | findstr ":%WEB_PORT%" || echo   (None found)
 echo.
 
 :: -----------------------------------------------
 :: PowerShell スクリプトを 64bit で起動（実行ポリシー回避）
 ::  - 既にこのバッチ自体が管理者で動作中のため、改めて RunAs は不要
 :: -----------------------------------------------
-echo 管理者権限で PowerShell スクリプト（64bit）を起動します...
+echo Starting PowerShell script (64bit) with administrator privileges...
 echo.
 
 "%POWERSHELL_X64%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0%SCRIPT_NAME%"
@@ -119,6 +119,6 @@ echo.
 :: バッチはここで終了
 :: -----------------------------------------------
 echo.
-echo すべての処理が完了しました。ウィンドウを閉じてもOKです。
+echo All processes completed. You can close this window.
 exit /b 0
 ``

@@ -67,7 +67,7 @@ function Get-HtmlHeader {
     param([string]$Title, [string]$BgColor="#1a1a1a")
     return @"
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
@@ -114,19 +114,19 @@ function Watch-RunningPresentation {
     try {
         $listener.Start()
     } catch {
-        Write-Warning "ポート競合等のためWeb制御(中断)ができません。キーボード操作のみ有効です。"
+        Write-Warning "Web control is unavailable due to port conflict. Only keyboard operations are available."
     }
 
     $head = Get-HtmlHeader -Title "Now Playing" -BgColor "#000000"
     $bodyHtml = @"
     <div class="card" style="border: 1px solid #28a745;">
         <div class="playing-icon">▶</div>
-        <h2>発表中</h2>
+        <h2>Now Presenting</h2>
         <p style="font-weight:bold; color:#fff;">$($TargetFileItem.Name)</p>
-        <p>PC側でスライド操作中...</p>
+        <p>Controlling slides on PC...</p>
     </div>
     <form method="post" action="/stop">
-        <button class="btn btn-stop">■ 発表を終了する (Finish)</button>
+        <button class="btn btn-stop">■ Stop Presentation</button>
     </form>
     
     <script>
@@ -247,20 +247,20 @@ function Get-UserAction {
     $ip = Get-LocalIPAddress
     $line = "=" * 70
     Write-Host $line -ForegroundColor Cyan
-    Write-Host "   プレゼンテーション コントローラー V7.3" -ForegroundColor White -BackgroundColor DarkCyan
+    Write-Host "   Presentation Controller V7.3" -ForegroundColor White -BackgroundColor DarkCyan
     Write-Host $line -ForegroundColor Cyan
     Write-Host " [Web URL]  http://$($ip):$($WebPort)/" -ForegroundColor Yellow
-    Write-Host " [状態]     $Mode" -ForegroundColor White
+    Write-Host " [Status]   $Mode" -ForegroundColor White
     Write-Host ""
-    Write-Host " --- PC操作メニュー ---" -ForegroundColor Gray
+    Write-Host " --- PC Control Menu ---" -ForegroundColor Gray
     if ($Mode -eq "Lobby") {
-        Write-Host " [Enter] 開始 (Start)" -ForegroundColor Green
-        Write-Host " [Q]     システム終了 (Exit)" -ForegroundColor Red
+        Write-Host " [Enter] Start" -ForegroundColor Green
+        Write-Host " [Q]     Exit System" -ForegroundColor Red
     } else {
-        Write-Host " [Enter] 次へ (Next)" -ForegroundColor Green
-        Write-Host " [R]     リトライ (Retry)" -ForegroundColor Yellow
-        Write-Host " [L]     リストへ (Lobby)" -ForegroundColor Cyan
-        Write-Host " [Q]     システム終了 (Exit)" -ForegroundColor Red
+        Write-Host " [Enter] Next" -ForegroundColor Green
+        Write-Host " [R]     Retry" -ForegroundColor Yellow
+        Write-Host " [L]     Back to Lobby" -ForegroundColor Cyan
+        Write-Host " [Q]     Exit System" -ForegroundColor Red
     }
     Write-Host $line -ForegroundColor Cyan
 
@@ -270,36 +270,36 @@ function Get-UserAction {
     # Bodyコンテンツ
     $bodyContent = ""
     if ($Mode -eq 'Lobby') {
-        $nextTxt = if ($ActiveFiles) { $ActiveFiles[0].Name } else { "なし" }
+        $nextTxt = if ($ActiveFiles) { $ActiveFiles[0].Name } else { "None" }
         $stBtn = if ($ActiveFiles) { "" } else { "disabled style='opacity:0.5;'" }
         
-        $listHtml = "<div class='list-container'><h3 style='color:#28a745;font-size:0.9rem;border-bottom:1px solid #555;'>待機中</h3>"
-        if (!$ActiveFiles) { $listHtml += "<p>なし</p>" }
+        $listHtml = "<div class='list-container'><h3 style='color:#28a745;font-size:0.9rem;border-bottom:1px solid #555;'>Pending</h3>"
+        if (!$ActiveFiles) { $listHtml += "<p>None</p>" }
         foreach ($f in $ActiveFiles) {
             $listHtml += "<form method='post' action='/select' style='margin:0;'><input type='hidden' name='filename' value='$($f.Name)'><button class='btn btn-file'>$($f.Name)</button></form>"
         }
-        $listHtml += "<h3 style='color:#6c757d;font-size:0.9rem;border-bottom:1px solid #555;margin-top:20px;'>完了済み</h3>"
+        $listHtml += "<h3 style='color:#6c757d;font-size:0.9rem;border-bottom:1px solid #555;margin-top:20px;'>Completed</h3>"
         foreach ($f in $FinishedFiles) {
             $listHtml += "<form method='post' action='/select' style='margin:0;'><input type='hidden' name='filename' value='$($f.Name)'><button class='btn btn-file btn-finished'>$($f.Name)</button></form>"
         }
         $listHtml += "</div>"
 
         $bodyContent = @"
-        <div class="card"><h2>スライド選択</h2><p>リスト選択 または 開始ボタン</p></div>
-        <form method="post" action="/start"><button class="btn btn-start" $stBtn>開始: $nextTxt</button></form>
+        <div class="card"><h2>Select Slide</h2><p>Select from list or press Start</p></div>
+        <form method="post" action="/start"><button class="btn btn-start" $stBtn>Start: $nextTxt</button></form>
         $listHtml
-        <form method="post" action="/exit"><button class="btn btn-exit">システム終了</button></form>
+        <form method="post" action="/exit"><button class="btn btn-exit">Exit System</button></form>
 "@
     } else {
-        $nxtLbl = if ($NextFileName) { "次のスライドを開始<br><span style='font-size:0.8rem;font-weight:normal'>$NextFileName</span>" } else { "待機リストなし" }
+        $nxtLbl = if ($NextFileName) { "Start Next Slide<br><span style='font-size:0.8rem;font-weight:normal'>$NextFileName</span>" } else { "No slides in queue" }
         $nxtSt = if ($NextFileName) { "" } else { "disabled style='opacity:0.5;'" }
 
         $bodyContent = @"
-        <div class="card"><h2>発表終了</h2><p>$CurrentFileName</p></div>
+        <div class="card"><h2>Presentation Ended</h2><p>$CurrentFileName</p></div>
         <form method="post" action="/next"><button class="btn btn-next" $nxtSt>$nxtLbl</button></form>
-        <form method="post" action="/retry"><button class="btn btn-retry">もう一度再生</button></form>
-        <form method="post" action="/lobby"><button class="btn btn-list">リストに戻る</button></form>
-        <form method="post" action="/exit"><button class="btn btn-exit">全て終了</button></form>
+        <form method="post" action="/retry"><button class="btn btn-retry">Play Again</button></form>
+        <form method="post" action="/lobby"><button class="btn btn-list">Back to List</button></form>
+        <form method="post" action="/exit"><button class="btn btn-exit">Exit All</button></form>
 "@
     }
     
@@ -323,7 +323,7 @@ function Get-UserAction {
 
     # --- 画面状態のHTML ---
     $processingHtml = $head + @"
-    <div style="margin-top:50px;"><div class="loader"></div><h2>処理中...</h2><p>画面が切り替わります</p></div>
+    <div style="margin-top:50px;"><div class="loader"></div><h2>Processing...</h2><p>Screen will refresh</p></div>
     <script>setTimeout(function(){ window.location.href='/'; }, 1000);</script>
 </body></html>
 "@
@@ -331,8 +331,8 @@ function Get-UserAction {
     $exitHtml = $head + @"
     <div style="margin-top:50px;">
         <div class="end-icon">✔</div>
-        <h1>システム終了</h1>
-        <p style="font-size:1.2rem; color:#fff;">このタブまたはウィンドウを<br>閉じてください。</p>
+        <h1>System Shutdown</h1>
+        <p style="font-size:1.2rem; color:#fff;">Please close this tab<br>or window.</p>
         <p style="color:#666; margin-top:20px;">Server has been shut down.</p>
     </div>
 </body></html>
@@ -412,7 +412,7 @@ function Get-UserAction {
                 $shuttingDown = $true
                 $shutdownDeadline = (Get-Date).AddSeconds(5)
                 Write-Host ""
-                Write-Host " [System] 終了準備中... (Web画面へ通知中 / 5秒後に終了します)" -ForegroundColor Magenta
+                Write-Host " [System] Shutting down... (Notifying web clients / Will exit in 5 seconds)" -ForegroundColor Magenta
             }
 
             if ($Mode -eq "Lobby") {
@@ -450,7 +450,7 @@ Add-Type -AssemblyName System.Web
 # ------------------------------------------------------------
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Warning "管理者権限が必要です。PowerShellを管理者として実行してください。"
+    Write-Warning "Administrator privileges required. Please run PowerShell as Administrator."
     Start-Sleep 3
     exit
 }
@@ -459,12 +459,12 @@ if (-not (Test-Path $TargetFolderPath)) { Write-Error "Target Folder Not Found";
 $finishFolderPath = Join-Path $TargetFolderPath $FinishFolderName
 if (-not (Test-Path $finishFolderPath)) { New-Item -Path $finishFolderPath -ItemType Directory | Out-Null }
 
-Write-Host "PowerPointを起動しています..." -ForegroundColor Cyan
+Write-Host "Starting PowerPoint..." -ForegroundColor Cyan
 try {
     $pptApp = New-Object -ComObject PowerPoint.Application
     $pptApp.Visible = [Microsoft.Office.Core.MsoTriState]::msoTrue
 } catch {
-    Write-Error "PowerPoint起動失敗"
+    Write-Error "Failed to start PowerPoint"
     exit
 }
 
@@ -505,7 +505,7 @@ try {
         $status = "NormalEnd"
 
         try {
-            Write-Host " >> 開いています: $($targetFileItem.Name)" -ForegroundColor Cyan
+            Write-Host " >> Opening: $($targetFileItem.Name)" -ForegroundColor Cyan
             $presentation = $pptApp.Presentations.Open($targetFileItem.FullName, $false, $false, $true)
             $presentation.SlideShowSettings.Run() | Out-Null
             
@@ -514,7 +514,7 @@ try {
             
             # 手動終了(ManualStop)の場合はここで閉じる
             if ($status -eq "ManualStop") {
-                Write-Host " >> 手動で終了されました。" -ForegroundColor Yellow
+                Write-Host " >> Manually stopped." -ForegroundColor Yellow
                 try { $presentation.Close() } catch {}
             }
             
@@ -525,9 +525,9 @@ try {
             # --- C. 移動判定 ---
             if ($targetFileItem.DirectoryName -ne $finishFolderPath) {
                 try {
-                    Write-Host " >> 完了フォルダへ移動..." -ForegroundColor Gray
+                    Write-Host " >> Moving to finished folder..." -ForegroundColor Gray
                     $targetFileItem = Move-Item -LiteralPath $targetFileItem.FullName -Destination $finishFolderPath -Force -PassThru
-                } catch { Write-Warning "移動失敗: $_" }
+                } catch { Write-Warning "Move failed: $_" }
             }
             
             # --- D. 終了後の画面遷移 ---
@@ -551,7 +551,7 @@ try {
             }
 
         } catch {
-            Write-Error "エラー: $($_.Exception.Message)"
+            Write-Error "Error: $($_.Exception.Message)"
             if ($presentation) { try { $presentation.Close() } catch {} }
             Start-Sleep 2
         }
@@ -559,5 +559,5 @@ try {
 
 } finally {
     if ($pptApp) { try { $pptApp.Quit() } catch {}; Release-ComObject $pptApp }
-    Write-Host "システムを終了しました。" -ForegroundColor Red
+    Write-Host "System terminated." -ForegroundColor Red
 }
