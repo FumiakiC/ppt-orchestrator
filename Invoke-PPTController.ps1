@@ -13,6 +13,39 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # ============================================================================== 
+# コンソールウィンドウ制御（誤操作防止）
+# ============================================================================== 
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public class ConsoleWindow {
+    [DllImport("kernel32.dll", ExactSpelling = true)]
+    public static extern IntPtr GetConsoleWindow();
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert);
+
+    [DllImport("user32.dll")]
+    public static extern int RemoveMenu(IntPtr hMenu, int nPosition, int wFlags);
+
+    public const int SC_CLOSE = 0xF060;
+    public const int MF_BYCOMMAND = 0x00000000;
+
+    public static void DisableCloseButton() {
+        IntPtr hWnd = GetConsoleWindow();
+        if (hWnd != IntPtr.Zero) {
+            IntPtr hMenu = GetSystemMenu(hWnd, false);
+            if (hMenu != IntPtr.Zero) {
+                RemoveMenu(hMenu, SC_CLOSE, MF_BYCOMMAND);
+            }
+        }
+    }
+}
+"@
+
+
+# ============================================================================== 
 # HTML/CSS/JSテンプレート集約
 # ============================================================================== 
 $script:HtmlTemplates = @{
@@ -750,6 +783,9 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
     Start-Sleep 3
     exit
 }
+
+# コンソールの「閉じる」ボタンを無効化（誤操作防止）
+[ConsoleWindow]::DisableCloseButton()
 
 if (-not (Test-Path $TargetFolderPath)) { Write-Error "Target Folder Not Found"; exit }
 $finishFolderPath = Join-Path $TargetFolderPath $FinishFolderName
