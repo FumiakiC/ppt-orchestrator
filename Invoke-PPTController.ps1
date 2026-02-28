@@ -64,25 +64,43 @@ $script:HtmlTemplates = @{
     </form>
     
     <script>
-        // 定期的に状態を確認し、発表が終わっていたらリロードする
-        setInterval(function(){{
-            // キャッシュ対策で時刻を付与
-            fetch('/status?t=' + Date.now())
-            .then(response => {{
-                if (response.ok) {{ return response.text(); }}
-                throw new Error('Network error');
-            }})
-            .then(text => {{
-                // サーバーから 'running' 以外（waiting/stoppingなど）が返ってきたら画面遷移(リロード)
-                if (text !== 'running') {{
-                    window.location.reload();
-                }}
-            }})
-            .catch(error => {{
-                // サーバー停止/切り替え時もリロードを試みる
-                setTimeout(() => window.location.reload(), 1000);
-            }});
-        }}, 1500);
+        // エクスポネンシャル・バックオフを用いた状態確認ポーリング
+        (function() {{
+            var defaultDelay = 1500;  // デフォルト待機時間（ミリ秒）
+            var currentDelay = defaultDelay;
+            var maxDelay = 5000;  // 最大待機時間（ミリ秒）
+            var backoffMultiplier = 1.5;  // バックオフ倍率
+            
+            function pollStatus() {{
+                fetch('/status?t=' + Date.now())
+                .then(response => {{
+                    if (response.ok) {{ return response.text(); }}
+                    throw new Error('Network error');
+                }})
+                .then(text => {{
+                    // 成功時：待機時間をデフォルトにリセット
+                    currentDelay = defaultDelay;
+                    
+                    // サーバーから 'running' 以外が返ってきたら画面遷移
+                    if (text !== 'running') {{
+                        window.location.reload();
+                    }} else {{
+                        // 継続してポーリング
+                        setTimeout(pollStatus, currentDelay);
+                    }}
+                }})
+                .catch(error => {{
+                    // エラー時：待機時間を増やす（エクスポネンシャル・バックオフ）
+                    currentDelay = Math.min(currentDelay * backoffMultiplier, maxDelay);
+                    
+                    // サーバー停止/切り替え時もリロードを試みる
+                    setTimeout(() => window.location.reload(), 1000);
+                }});
+            }}
+            
+            // ポーリング開始
+            pollStatus();
+        }})();
     </script>
 </div></body></html>
 "@
@@ -107,41 +125,66 @@ $script:HtmlTemplates = @{
     # ポーリングスクリプト（状態監視用JS）
     PollingScript = @"
     <script>
-        // ポーリングタイマーを変数に格納して制御可能にする
-        var pollingTimer = setInterval(function(){{
-            fetch('/status?t=' + Date.now())
-            .then(r => r.text())
-            .then(status => {{
-                if (status === 'stopping') {{
-                    clearInterval(pollingTimer);
-                    window.location.href = '/exit';
-                }} else if (status === 'changing' || status === 'starting' || status === 'running') {{
-                    // プレゼンテーション開始や状態変化時にリロード
-                    // running も検知対象に追加（changing を取り逃がした場合の対処）
-                    clearInterval(pollingTimer);
-                    window.location.href = '/';
-                }}
-            }})
-            .catch(e => console.log('Waiting connection...'));
-        }}, 300);  // 300msごとにチェック（800ms待機時間内に確実に検知）
-        
-        // フォーム送信時にポーリングを停止して画面遷移の競合を防止
-        document.addEventListener('DOMContentLoaded', function() {{
-            var forms = document.querySelectorAll('form');
-            forms.forEach(function(form) {{
-                form.addEventListener('submit', function() {{
-                    clearInterval(pollingTimer);
+        // エクスポネンシャル・バックオフを用いた状態監視ポーリング
+        (function() {{
+            var defaultDelay = 300;  // デフォルト待機時間（ミリ秒）
+            var currentDelay = defaultDelay;
+            var maxDelay = 5000;  // 最大待機時間（ミリ秒）
+            var backoffMultiplier = 1.5;  // バックオフ倍率
+            var isPolling = true;  // ポーリング制御フラグ
+            
+            function pollStatus() {{
+                if (!isPolling) return;  // ポーリング停止時は処理しない
+                
+                fetch('/status?t=' + Date.now())
+                .then(r => r.text())
+                .then(status => {{
+                    // 成功時：待機時間をデフォルトにリセット
+                    currentDelay = defaultDelay;
+                    
+                    if (status === 'stopping') {{
+                        isPolling = false;
+                        window.location.href = '/exit';
+                    }} else if (status === 'changing' || status === 'starting' || status === 'running') {{
+                        // プレゼンテーション開始や状態変化時にリロード
+                        isPolling = false;
+                        window.location.href = '/';
+                    }} else {{
+                        // 継続してポーリング
+                        setTimeout(pollStatus, currentDelay);
+                    }}
+                }})
+                .catch(e => {{
+                    // エラー時：待機時間を増やす（エクスポネンシャル・バックオフ）
+                    currentDelay = Math.min(currentDelay * backoffMultiplier, maxDelay);
+                    console.log('Waiting connection... (retry in ' + currentDelay + 'ms)');
+                    
+                    // 継続してポーリング
+                    setTimeout(pollStatus, currentDelay);
+                }});
+            }}
+            
+            // フォーム送信時にポーリングを停止して画面遷移の競合を防止
+            document.addEventListener('DOMContentLoaded', function() {{
+                var forms = document.querySelectorAll('form');
+                forms.forEach(function(form) {{
+                    form.addEventListener('submit', function() {{
+                        isPolling = false;
+                    }});
+                }});
+                
+                // ボタンクリック時も念のため停止
+                var buttons = document.querySelectorAll('.btn');
+                buttons.forEach(function(btn) {{
+                    btn.addEventListener('click', function() {{
+                        isPolling = false;
+                    }});
                 }});
             }});
             
-            // ボタンクリック時も念のため停止
-            var buttons = document.querySelectorAll('.btn');
-            buttons.forEach(function(btn) {{
-                btn.addEventListener('click', function() {{
-                    clearInterval(pollingTimer);
-                }});
-            }});
-        }});
+            // ポーリング開始
+            pollStatus();
+        }})();
     </script>
 "@
 
@@ -149,37 +192,57 @@ $script:HtmlTemplates = @{
     ProcessingView = @"
     <div style="margin-top:50px;"><div class="loader"></div><h2>Processing...</h2><p>Screen will refresh</p></div>
     <script>
-        var checkCount = 0;
-        var maxRetries = 60; // 最大30秒待機（500ms * 60）
-        var errorCount = 0;
-        var maxErrors = 40; // 接続エラー時は最大20秒待機（500ms * 40）
-        var checkInterval = setInterval(function(){{
-            fetch('/status?t=' + Date.now())
-            .then(r => r.text())
-            .then(status => {{
-                // running（発表中）またはwaiting（待機中）になったらリロード
-                if (status === 'running' || (status === 'waiting' && checkCount > 2)) {{
-                    clearInterval(checkInterval);
-                    window.location.href = '/';
-                }} else {{
-                    checkCount++;
-                    if (checkCount > maxRetries) {{
-                        // タイムアウト時は強制リロード
-                        clearInterval(checkInterval);
+        // エクスポネンシャル・バックオフを用いた状態確認ポーリング
+        (function() {{
+            var defaultDelay = 500;  // デフォルト待機時間（ミリ秒）
+            var currentDelay = defaultDelay;
+            var maxDelay = 5000;  // 最大待機時間（ミリ秒）
+            var backoffMultiplier = 1.5;  // バックオフ倍率
+            var checkCount = 0;
+            var maxRetries = 60; // 最大30秒待機（タイムアウト判定用）
+            var errorCount = 0;
+            var maxErrors = 40; // 接続エラー時は最大20秒待機
+            
+            function pollStatus() {{
+                fetch('/status?t=' + Date.now())
+                .then(r => r.text())
+                .then(status => {{
+                    // 成功時：待機時間をデフォルトにリセット
+                    currentDelay = defaultDelay;
+                    
+                    // running（発表中）またはwaiting（待機中）になったらリロード
+                    if (status === 'running' || (status === 'waiting' && checkCount > 2)) {{
                         window.location.href = '/';
+                    }} else {{
+                        checkCount++;
+                        if (checkCount > maxRetries) {{
+                            // タイムアウト時は強制リロード
+                            window.location.href = '/';
+                        }} else {{
+                            // 継続してポーリング
+                            setTimeout(pollStatus, currentDelay);
+                        }}
                     }}
-                }}
-            }})
-            .catch(e => {{
-                // 接続エラー時、プレゼンテーション起動を待って再試行
-                checkCount++;
-                errorCount++;
-                if (errorCount > maxErrors || checkCount > maxRetries) {{
-                    clearInterval(checkInterval);
-                    window.location.href = '/';
-                }}
-            }});
-        }}, 500);
+                }})
+                .catch(e => {{
+                    // エラー時：待機時間を増やす（エクスポネンシャル・バックオフ）
+                    currentDelay = Math.min(currentDelay * backoffMultiplier, maxDelay);
+                    
+                    // 接続エラー時、プレゼンテーション起動を待って再試行
+                    checkCount++;
+                    errorCount++;
+                    if (errorCount > maxErrors || checkCount > maxRetries) {{
+                        window.location.href = '/';
+                    }} else {{
+                        // 継続してポーリング（バックオフした待機時間で）
+                        setTimeout(pollStatus, currentDelay);
+                    }}
+                }});
+            }}
+            
+            // ポーリング開始
+            pollStatus();
+        }})();
     </script>
 </body></html>
 "@
