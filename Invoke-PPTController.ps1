@@ -816,10 +816,6 @@ try {
                 Write-Host " >> Manually stopped." -ForegroundColor Yellow
                 try { $presentation.Close() } catch {}
             }
-            
-            # オブジェクト破棄
-            $presentation = $null
-            [GC]::Collect()
 
             # --- C. 移動判定 ---
             if ($targetFileItem.DirectoryName -ne $finishFolderPath) {
@@ -853,10 +849,28 @@ try {
             Write-Error "Error: $($_.Exception.Message)"
             if ($presentation) { try { $presentation.Close() } catch {} }
             Start-Sleep 2
+        } finally {
+            # COMオブジェクトの確実なクリーンアップ
+            if ($presentation) {
+                try { $presentation.Close() } catch {}
+                Release-ComObject -obj $presentation
+                $presentation = $null
+            }
+            # ガベージコレクションを強制実行してCOM参照を完全に解放
+            [System.GC]::Collect()
+            [System.GC]::WaitForPendingFinalizers()
         }
     }
 
 } finally {
-    if ($pptApp) { try { $pptApp.Quit() } catch {}; Release-ComObject $pptApp }
+    # PowerPointアプリケーション全体の終了処理
+    if ($pptApp) { 
+        try { $pptApp.Quit() } catch {}
+        Release-ComObject -obj $pptApp
+        $pptApp = $null
+    }
+    # ガベージコレクションを強制実行してPOWERPNT.EXEプロセスを確実に終了
+    [System.GC]::Collect()
+    [System.GC]::WaitForPendingFinalizers()
     Write-Host "System terminated." -ForegroundColor Red
 }
