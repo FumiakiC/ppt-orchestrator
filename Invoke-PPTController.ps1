@@ -76,11 +76,19 @@ $script:HtmlTemplates = @{
         .loader {{ border: 5px solid #333; border-top: 5px solid #00d2ff; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }}
         .playing-icon {{ font-size: 3rem; color: #28a745; margin: 10px; animation: pulse 2s infinite; }}
         .end-icon {{ font-size: 4rem; color: #dc3545; margin: 20px 0; }}
+        #offline-overlay {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 9999; flex-direction: column; justify-content: center; align-items: center; color: #fff; backdrop-filter: blur(5px); }}
+        #offline-overlay.active {{ display: flex; }}
+        .offline-icon {{ font-size: 4rem; margin-bottom: 10px; color: #dc3545; animation: pulse 2s infinite; }}
         @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
         @keyframes pulse {{ 0% {{ transform: scale(1); opacity: 1; }} 50% {{ transform: scale(1.1); opacity: 0.8; }} 100% {{ transform: scale(1); opacity: 1; }} }}
     </style>
 </head>
 <body>
+    <div id="offline-overlay">
+        <div class="offline-icon">⚠️</div>
+        <h2>Connection Lost</h2>
+        <p>Connection unstable.<br>Attempting to reconnect...</p>
+    </div>
     <div class="container">
 "@
 
@@ -99,14 +107,21 @@ $script:HtmlTemplates = @{
     <script>
         // エクスポネンシャル・バックオフを用いた状態確認ポーリング
         (function() {{
+            var overlay = document.getElementById('offline-overlay');
             var defaultDelay = 1500;  // デフォルト待機時間（ミリ秒）
             var currentDelay = defaultDelay;
             var maxDelay = 5000;  // 最大待機時間（ミリ秒）
             var backoffMultiplier = 1.5;  // バックオフ倍率
             
             function pollStatus() {{
+                var showOverlayTimer = setTimeout(function() {{
+                    if (overlay) overlay.classList.add('active');
+                }}, 3000);
+                
                 fetch('/status?t=' + Date.now())
                 .then(response => {{
+                    clearTimeout(showOverlayTimer);
+                    if (overlay) overlay.classList.remove('active');
                     if (response.ok) {{ return response.text(); }}
                     throw new Error('Network error');
                 }})
@@ -124,6 +139,8 @@ $script:HtmlTemplates = @{
                 }})
                 .catch(error => {{
                     // エラー時：待機時間を増やす（エクスポネンシャル・バックオフ）
+                    clearTimeout(showOverlayTimer);
+                    if (overlay) overlay.classList.add('active');
                     currentDelay = Math.min(currentDelay * backoffMultiplier, maxDelay);
                     console.log('Waiting connection... (retry in ' + currentDelay + 'ms)');
                     
@@ -161,6 +178,7 @@ $script:HtmlTemplates = @{
     <script>
         // エクスポネンシャル・バックオフを用いた状態監視ポーリング
         (function() {{
+            var overlay = document.getElementById('offline-overlay');
             var defaultDelay = 300;  // デフォルト待機時間（ミリ秒）
             var currentDelay = defaultDelay;
             var maxDelay = 5000;  // 最大待機時間（ミリ秒）
@@ -170,8 +188,16 @@ $script:HtmlTemplates = @{
             function pollStatus() {{
                 if (!isPolling) return;  // ポーリング停止時は処理しない
                 
+                var showOverlayTimer = setTimeout(function() {{
+                    if (overlay) overlay.classList.add('active');
+                }}, 3000);
+                
                 fetch('/status?t=' + Date.now())
-                .then(r => r.text())
+                .then(r => {{
+                    clearTimeout(showOverlayTimer);
+                    if (overlay) overlay.classList.remove('active');
+                    return r.text();
+                }})
                 .then(status => {{
                     // 成功時：待機時間をデフォルトにリセット
                     currentDelay = defaultDelay;
@@ -190,6 +216,8 @@ $script:HtmlTemplates = @{
                 }})
                 .catch(e => {{
                     // エラー時：待機時間を増やす（エクスポネンシャル・バックオフ）
+                    clearTimeout(showOverlayTimer);
+                    if (overlay) overlay.classList.add('active');
                     currentDelay = Math.min(currentDelay * backoffMultiplier, maxDelay);
                     console.log('Waiting connection... (retry in ' + currentDelay + 'ms)');
                     
@@ -202,7 +230,11 @@ $script:HtmlTemplates = @{
             document.addEventListener('DOMContentLoaded', function() {{
                 var forms = document.querySelectorAll('form');
                 forms.forEach(function(form) {{
-                    form.addEventListener('submit', function() {{
+                    form.addEventListener('submit', function(e) {{
+                        if (overlay && overlay.classList.contains('active')) {{
+                            e.preventDefault();
+                            return;
+                        }}
                         isPolling = false;
                     }});
                 }});
@@ -228,6 +260,7 @@ $script:HtmlTemplates = @{
     <script>
         // エクスポネンシャル・バックオフを用いた状態確認ポーリング
         (function() {{
+            var overlay = document.getElementById('offline-overlay');
             var defaultDelay = 500;  // デフォルト待機時間（ミリ秒）
             var currentDelay = defaultDelay;
             var maxDelay = 5000;  // 最大待機時間（ミリ秒）
@@ -238,8 +271,16 @@ $script:HtmlTemplates = @{
             var maxErrors = 40; // 接続エラー時は最大20秒待機
             
             function pollStatus() {{
+                var showOverlayTimer = setTimeout(function() {{
+                    if (overlay) overlay.classList.add('active');
+                }}, 3000);
+                
                 fetch('/status?t=' + Date.now())
-                .then(r => r.text())
+                .then(r => {{
+                    clearTimeout(showOverlayTimer);
+                    if (overlay) overlay.classList.remove('active');
+                    return r.text();
+                }})
                 .then(status => {{
                     // 成功時：待機時間をデフォルトにリセット
                     currentDelay = defaultDelay;
@@ -260,6 +301,8 @@ $script:HtmlTemplates = @{
                 }})
                 .catch(e => {{
                     // エラー時：待機時間を増やす（エクスポネンシャル・バックオフ）
+                    clearTimeout(showOverlayTimer);
+                    if (overlay) overlay.classList.add('active');
                     currentDelay = Math.min(currentDelay * backoffMultiplier, maxDelay);
                     
                     // 接続エラー時、プレゼンテーション起動を待って再試行
