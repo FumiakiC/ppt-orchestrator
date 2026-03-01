@@ -513,11 +513,14 @@ $script:HtmlTemplates = @{
             box.addEventListener('paste', function(e) {{
                 e.preventDefault();
                 var pasteData = e.clipboardData.getData('text').replace(/[^0-9]/g, '').substring(0, 6);
-                for (var i = 0; i < pasteData.length && (index + i) < 6; i++) {{
-                    boxes[index + i].value = pasteData[i];
+                for (var j = 0; j < boxes.length; j++) {{
+                    boxes[j].value = '';
                 }}
-                if (index + pasteData.length < 6) {{
-                    boxes[index + pasteData.length].focus();
+                for (var i = 0; i < pasteData.length && i < 6; i++) {{
+                    boxes[i].value = pasteData[i];
+                }}
+                if (pasteData.length < 6) {{
+                    boxes[pasteData.length].focus();
                 }} else {{
                     boxes[5].focus();
                 }}
@@ -914,7 +917,7 @@ function Get-UserAction {
                         $submittedPin = $matches[1]
                         if ($submittedPin -eq $script:AuthPin.ToString()) {
                             # 認証成功：Cookieをセットしてリダイレクト
-                            $res.Headers.Add("Set-Cookie", "SessionToken=$script:SessionToken; HttpOnly; Path=/")
+                            $res.Headers.Add("Set-Cookie", "SessionToken=$script:SessionToken; HttpOnly; Path=/; SameSite=Strict")
                             $res.StatusCode = 302
                             $res.Headers.Add("Location", "/")
                             Send-HttpResponse -Response $res -Content ""
@@ -924,6 +927,7 @@ function Get-UserAction {
                     }
                 }
                 # 認証失敗：エラー表示
+                Start-Sleep -Seconds 1
                 $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", "error"
                 Send-HttpResponse -Response $res -Content $authHtml
                 $contextTask = $listener.GetContextAsync()
