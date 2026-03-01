@@ -63,24 +63,90 @@ $script:HtmlTemplates = @{
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
     <title>{0}</title>
     <style>
-        body {{ font-family: sans-serif; background: {1}; color: #fff; text-align: center; padding: 20px; margin: 0; }}
-        .container {{ max-width: 600px; margin: 0 auto; }}
-        .card {{ background: #333; padding: 20px; border-radius: 15px; margin-bottom: 20px; }}
-        h2 {{ color: #00d2ff; margin: 0 0 5px 0; font-size: 1.3rem; }}
-        p {{ color: #ccc; font-size: 0.9rem; margin: 5px 0; }}
-        .btn {{ display: block; width: 100%; padding: 16px; margin: 10px 0; font-size: 1.1rem; border: none; border-radius: 10px; cursor: pointer; color: white; font-weight: bold; }}
-        .btn-start {{ background: linear-gradient(135deg, #007bff, #0056b3); font-size: 1.2rem; padding: 20px; }}
-        .btn-stop  {{ background: linear-gradient(135deg, #dc3545, #a71d2a); font-size: 1.2rem; padding: 20px; box-shadow: 0 4px 10px rgba(220,53,69,0.4); }}
-        .btn-next  {{ background: linear-gradient(135deg, #28a745, #218838); padding: 20px; font-size: 1.2rem; }}
-        .btn-retry {{ background: linear-gradient(135deg, #ffc107, #e0a800); color: #000; }}
-        .btn-list  {{ background: #17a2b8; }}
-        .btn-exit  {{ background: #6c757d; opacity: 0.8; margin-top: 30px; }}
-        .btn-file {{ background: #444; text-align: left; padding: 12px 15px; font-size: 1rem; margin: 5px 0; border-left: 5px solid #00d2ff; }}
-        .btn-finished {{ background: #2a2a2a; border-left: 5px solid #6c757d; color: #aaa; }}
-        .list-container {{ text-align: left; margin-top: 20px; max-height: 40vh; overflow-y: auto; }}
+        body {{
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #000000;
+            color: #ffffff;
+            text-align: center;
+            padding: 20px;
+            margin: 0;
+            min-height: 100vh;
+            position: relative;
+            overflow-x: hidden;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }}
+        .container {{
+            max-width: 600px;
+            width: 100%;
+            margin: 0 auto;
+            position: relative;
+            z-index: 10;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            height: 100%;
+        }}
+        .card {{
+            background: #1e1e1e;
+            border: 1px solid #333333;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }}
+        h2 {{ color: #ffffff; margin: 0 0 5px 0; font-size: 1.3rem; }}
+        p {{ color: #dcdcdc; font-size: 0.9rem; margin: 5px 0; }}
+        .btn {{
+            display: block;
+            width: 100%;
+            padding: 16px;
+            margin: 10px 0;
+            font-size: 1.1rem;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            color: #ffffff;
+            font-weight: bold;
+            transition: filter 0.2s ease;
+        }}
+        .btn:hover {{ filter: brightness(1.15); }}
+        .btn-start {{ background: #0d6efd; color: #ffffff; font-size: 1.2rem; padding: 20px; }}
+        .btn-stop  {{ background: #dc3545; color: #ffffff; font-size: 1.2rem; padding: 20px; }}
+        .btn-next  {{ background: #198754; color: #ffffff; padding: 20px; font-size: 1.2rem; }}
+        .btn-retry {{ background: #ffc107; color: #000000; }}
+        .btn-list  {{ background: #0dcaf0; color: #000000; }}
+        .btn-exit  {{ background: #495057; color: #ffffff; opacity: 0.95; margin-top: 20px; margin-bottom: 50px; }}
+        .btn-file {{ background: #2b2b2b; text-align: left; padding: 12px 15px; font-size: 1rem; margin: 5px 0; border-left: 5px solid #0d6efd; color: #ffffff; }}
+        .btn-finished {{ background: #121212; border-left: 5px solid #495057; color: #6c757d; }}
+        .list-container {{
+            text-align: left;
+            margin-top: 20px;
+            flex-grow: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            white-space: normal;
+        }}
+        .list-container::-webkit-scrollbar {{ width: 10px; }}
+        .list-container::-webkit-scrollbar-track {{ background: #111111; border-radius: 8px; }}
+        .list-container::-webkit-scrollbar-thumb {{ background: #343a40; border-radius: 8px; }}
+        .list-container::-webkit-scrollbar-thumb:hover {{ background: #495057; }}
         .loader {{ border: 5px solid #333; border-top: 5px solid #00d2ff; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }}
-        .playing-icon {{ font-size: 3rem; color: #28a745; margin: 10px; animation: pulse 2s infinite; }}
-        .end-icon {{ font-size: 4rem; color: #dc3545; margin: 20px 0; }}
+        .playing-icon {{
+            font-size: 3rem;
+            margin: 10px;
+            animation: pulse 2s infinite;
+            color: #198754;
+        }}
+        .end-icon {{
+            font-size: 4rem;
+            margin: 20px 0;
+            color: #dc3545;
+        }}
         #offline-overlay {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 9999; flex-direction: column; justify-content: center; align-items: center; color: #fff; backdrop-filter: blur(5px); }}
         #offline-overlay.active {{ display: flex; }}
         .offline-icon {{ font-size: 4rem; margin-bottom: 10px; color: #dc3545; animation: pulse 2s infinite; }}
@@ -155,7 +221,7 @@ $script:HtmlTemplates = @{
         <div class="card"><h2>Select Slide</h2><p>Select from list or press Start</p></div>
         <form method="post" action="/start"><button class="btn btn-start" {0}>Start: {1}</button></form>
         {2}
-        <form method="post" action="/exit"><button class="btn btn-exit">Exit System</button></form>
+        <form method="post" action="/exit" onsubmit="return confirm('本当にシステムを終了しますか？\n（PC上のプレゼンテーションも強制終了されます）');"><button class="btn btn-exit">Exit System</button></form>
 "@
 
     # プレゼンテーション終了後のダイアログ画面 (パラメータ: {0}=CurrentFileName, {1}=nxtSt, {2}=nxtLbl)
@@ -164,7 +230,7 @@ $script:HtmlTemplates = @{
         <form method="post" action="/next"><button class="btn btn-next" {1}>{2}</button></form>
         <form method="post" action="/retry"><button class="btn btn-retry">Play Again</button></form>
         <form method="post" action="/lobby"><button class="btn btn-list">Back to List</button></form>
-        <form method="post" action="/exit"><button class="btn btn-exit">Exit All</button></form>
+        <form method="post" action="/exit" onsubmit="return confirm('本当にシステムを終了しますか？\n（PC上のプレゼンテーションも強制終了されます）');"><button class="btn btn-exit">Exit All</button></form>
 "@
 
     # ポーリングスクリプト（Lobby/Dialog用）
@@ -309,7 +375,7 @@ $script:HtmlTemplates = @{
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+            background: #000000;
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -317,29 +383,13 @@ $script:HtmlTemplates = @{
             position: relative;
             overflow: hidden;
         }}
-        body::before {{
-            content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(0,210,255,0.1) 0%, transparent 70%);
-            animation: bgRotate 20s linear infinite;
-        }}
-        @keyframes bgRotate {{
-            from {{ transform: rotate(0deg); }}
-            to {{ transform: rotate(360deg); }}
-        }}
         .auth-container {{
             position: relative;
             z-index: 10;
-            background: rgba(30, 30, 30, 0.7);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 25px;
+            background: #1e1e1e;
+            border: 1px solid #333333;
+            border-radius: 12px;
             padding: 50px 40px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
             max-width: 450px;
             width: 90%;
             text-align: center;
@@ -347,11 +397,7 @@ $script:HtmlTemplates = @{
         .lock-icon {{
             font-size: 4rem;
             margin-bottom: 20px;
-            background: linear-gradient(135deg, #00d2ff, #0084ff);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            animation: pulse 2s ease-in-out infinite;
+            color: #0d6efd;
         }}
         h1 {{
             color: #fff;
@@ -383,18 +429,17 @@ $script:HtmlTemplates = @{
             height: 65px;
             font-size: 2rem;
             text-align: center;
-            border: 2px solid rgba(255, 255, 255, 0.2);
+            border: 2px solid #444;
             border-radius: 12px;
-            background: rgba(255, 255, 255, 0.05);
+            background: #2b2b2b;
             color: #fff;
             outline: none;
             transition: all 0.3s;
-            caret-color: #00d2ff;
+            caret-color: #0d6efd;
         }}
         .pin-box:focus {{
-            border-color: #00d2ff;
-            background: rgba(0, 210, 255, 0.1);
-            box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);
+            border-color: #0d6efd;
+            background: #2b2b2b;
         }}
         .pin-box.error {{
             border-color: #dc3545;
@@ -418,28 +463,20 @@ $script:HtmlTemplates = @{
             font-weight: 600;
             border: none;
             border-radius: 12px;
-            background: linear-gradient(135deg, #00d2ff, #0084ff);
-            color: #fff;
+            background: #0d6efd;
+            color: #ffffff;
             cursor: pointer;
-            transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(0, 210, 255, 0.4);
+            transition: filter 0.2s ease;
         }}
         .btn-submit:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 210, 255, 0.6);
+            filter: brightness(1.15);
         }}
         .btn-submit:active {{
-            transform: translateY(1px);
-            box-shadow: 0 2px 10px rgba(0, 210, 255, 0.4);
+            filter: brightness(1.0);
         }}
         .btn-submit:disabled {{
             opacity: 0.5;
             cursor: not-allowed;
-            transform: none;
-        }}
-        @keyframes pulse {{
-            0%, 100% {{ transform: scale(1); }}
-            50% {{ transform: scale(1.05); }}
         }}
     </style>
 </head>
@@ -778,6 +815,7 @@ function Get-UserAction {
                 Write-Host " [N]     Next Page  [P] Previous Page" -ForegroundColor Magenta
             }
             Write-Host " [Q]     Exit System" -ForegroundColor Red
+            Write-Host "   * Note: To close a presentation, please click the 'X' button on the PowerPoint window." -ForegroundColor DarkGray
             Write-Host ""
             
             if ($totalPages -gt 1) {
@@ -829,14 +867,15 @@ function Get-UserAction {
             Write-Host " [R]     Retry" -ForegroundColor Yellow
             Write-Host " [L]     Back to Lobby" -ForegroundColor Cyan
             Write-Host " [Q]     Exit System" -ForegroundColor Red
+            Write-Host "   * Note: To close a presentation, please click the 'X' button on the PowerPoint window." -ForegroundColor DarkGray
         }
-        Write-Host $line -ForegroundColor Cyan
-    }
+            Write-Host ""
+            Write-Host " ▶ Waiting for command... (Press a key to execute immediately)" -ForegroundColor Green
+            Write-Host $line -ForegroundColor Cyan
+        }
     
-    # 初回表示
-    Show-ConsolePage
-
-    # HTML生成
+        # 初回表示
+        Show-ConsolePage
     $head = Get-HtmlHeader -Title "Controller" -BgColor $(if($Mode -eq 'Lobby'){"#1a1a1a"}else{"#000000"})
     
     # Bodyコンテンツ
@@ -879,6 +918,7 @@ function Get-UserAction {
     # シャットダウン制御用
     $shuttingDown = $false
     $shutdownDeadline = $null
+    $waitingExitConfirm = $false
 
     $contextTask = $listener.GetContextAsync()
 
@@ -993,61 +1033,76 @@ function Get-UserAction {
         if ((!$shuttingDown) -and ($resultAction -eq $null) -and [Console]::KeyAvailable) {
             $k = [Console]::ReadKey($true).Key.ToString().ToUpper()
             
-            # コンソールからの終了要求（5秒待機ロジック）
-            if ($k -eq "Q" -or $k -eq "ESCAPE") {
-                $shuttingDown = $true
-                $shutdownDeadline = (Get-Date).AddSeconds(5)
-                Write-Host ""
-                Write-Host " [System] Shutting down... (Notifying web clients / Will exit in 5 seconds)" -ForegroundColor Magenta
-            }
-
-            if ($Mode -eq "Lobby") {
-                if ($k -eq "ENTER" -or $k -eq "S") { $resultAction = "Start"; $actionSetTime = Get-Date }
-                
-                # ページング操作
-                $totalActiveFiles = if ($ActiveFiles) { $ActiveFiles.Count } else { 0 }
-                $totalFinishedFiles = if ($FinishedFiles) { $FinishedFiles.Count } else { 0 }
-                $totalFiles = $totalActiveFiles + $totalFinishedFiles
-                $totalPages = [Math]::Ceiling($totalFiles / $itemsPerPage)
-                
-                if ($k -eq "N") {
-                    # 次のページ
-                    if ($currentPage -lt ($totalPages - 1)) {
-                        $currentPage++
-                        Show-ConsolePage
-                    }
-                }
-                elseif ($k -eq "P") {
-                    # 前のページ
-                    if ($currentPage -gt 0) {
-                        $currentPage--
-                        Show-ConsolePage
-                    }
-                }
-                
-                # 数字キーでスライド選択（ページオフセットを考慮）
-                if ($k -match "^D([0-9])$" -or $k -match "^NUMPAD([0-9])$") {
-                    # D1-D9 および NUMPAD1-NUMPAD9 形式のキー
-                    $num = [int]$matches[1]
-                    if ($num -ge 1 -and $num -le 9) {
-                        $absoluteIndex = $currentPage * $itemsPerPage + ($num - 1)
-                        
-                        # 全ファイルリストを作成
-                        $allFiles = @()
-                        if ($ActiveFiles) { $allFiles += $ActiveFiles }
-                        if ($FinishedFiles) { $allFiles += $FinishedFiles }
-                        
-                        if ($absoluteIndex -lt $allFiles.Count) {
-                            $resultAction = "Select"
-                            $resultFile = $allFiles[$absoluteIndex].Name
-                            $actionSetTime = Get-Date
-                        }
-                    }
+            # 終了確認待ちの場合
+            if ($waitingExitConfirm) {
+                if ($k -eq "Y") {
+                    $shuttingDown = $true
+                    $shutdownDeadline = (Get-Date).AddSeconds(5)
+                    Write-Host ""
+                    Write-Host " [System] Shutting down... (Notifying web clients / Will exit in 5 seconds)" -ForegroundColor Magenta
+                } else {
+                    # キャンセル
+                    $waitingExitConfirm = $false
+                    Show-ConsolePage
                 }
             } else {
-                if ($k -eq "ENTER" -or $k -eq "N") { $resultAction = "Next"; $actionSetTime = Get-Date }
-                if ($k -eq "R") { $resultAction = "Retry"; $actionSetTime = Get-Date }
-                if ($k -eq "L" -or $k -eq "BACKSPACE") { $resultAction = "Lobby"; $actionSetTime = Get-Date }
+                # 通常コマンド処理
+                
+                # コンソールからの終了要求
+                if ($k -eq "Q" -or $k -eq "ESCAPE") {
+                    $waitingExitConfirm = $true
+                    Write-Host ""
+                    Write-Host " Are you sure you want to exit? [Y] Confirm / [N] Cancel : " -ForegroundColor Yellow -NoNewline
+                }
+
+                if ($Mode -eq "Lobby") {
+                    if ($k -eq "ENTER" -or $k -eq "S") { $resultAction = "Start"; $actionSetTime = Get-Date }
+                    
+                    # ページング操作
+                    $totalActiveFiles = if ($ActiveFiles) { $ActiveFiles.Count } else { 0 }
+                    $totalFinishedFiles = if ($FinishedFiles) { $FinishedFiles.Count } else { 0 }
+                    $totalFiles = $totalActiveFiles + $totalFinishedFiles
+                    $totalPages = [Math]::Ceiling($totalFiles / $itemsPerPage)
+                    
+                    if ($k -eq "N") {
+                        # 次のページ
+                        if ($currentPage -lt ($totalPages - 1)) {
+                            $currentPage++
+                            Show-ConsolePage
+                        }
+                    }
+                    elseif ($k -eq "P") {
+                        # 前のページ
+                        if ($currentPage -gt 0) {
+                            $currentPage--
+                            Show-ConsolePage
+                        }
+                    }
+                    
+                    # 数字キーでスライド選択（ページオフセットを考慮）
+                    if ($k -match "^D([0-9])$" -or $k -match "^NUMPAD([0-9])$") {
+                        # D1-D9 および NUMPAD1-NUMPAD9 形式のキー
+                        $num = [int]$matches[1]
+                        if ($num -ge 1 -and $num -le 9) {
+                            $absoluteIndex = $currentPage * $itemsPerPage + ($num - 1)
+                            
+                            # 全ファイルリストを作成
+                            $allFiles = @()
+                            if ($ActiveFiles) { $allFiles += $ActiveFiles }
+                            if ($FinishedFiles) { $allFiles += $FinishedFiles }
+                            
+                            if ($absoluteIndex -lt $allFiles.Count) {
+                                $resultAction = "Select"
+                                $resultFile = $allFiles[$absoluteIndex].Name
+                                $actionSetTime = Get-Date
+                            }
+                        }
+                    }
+                } else {
+                    if ($k -eq "ENTER" -or $k -eq "N") { $resultAction = "Next"; $actionSetTime = Get-Date }
+                    if ($k -eq "R") { $resultAction = "Retry"; $actionSetTime = Get-Date }
+                    if ($k -eq "L" -or $k -eq "BACKSPACE") { $resultAction = "Lobby"; $actionSetTime = Get-Date }
+                }
             }
         }
 
