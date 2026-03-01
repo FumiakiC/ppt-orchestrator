@@ -12,6 +12,9 @@ param(
 # エラー発生時に停止する設定ですが、送信エラーは個別にcatchして無視します
 $ErrorActionPreference = 'Stop'
 
+$script:AuthPin = Get-Random -Minimum 100000 -Maximum 999999
+$script:SessionToken = [guid]::NewGuid().ToString('N')
+
 # ============================================================================== 
 # コンソールウィンドウ制御（誤操作防止）
 # ============================================================================== 
@@ -90,6 +93,220 @@ $script:HtmlTemplates = @{
         <p>Connection unstable.<br>Attempting to reconnect...</p>
     </div>
     <div class="container">
+"@
+
+    AuthView = @"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <title>Secure Access</title>
+    <style>
+        :root {{
+            color-scheme: dark;
+            --bg: #070b1a;
+            --card: rgba(19, 30, 54, 0.52);
+            --border: rgba(116, 174, 255, 0.22);
+            --text: #e8f2ff;
+            --subtext: #9fb0d1;
+            --accent: #66b3ff;
+            --accent-strong: #2a7dff;
+            --danger: #ff6d6d;
+        }}
+        * {{ box-sizing: border-box; }}
+        html, body {{ height: 100%; }}
+        body {{
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background:
+                radial-gradient(900px 600px at 10% -10%, rgba(80, 162, 255, 0.26), transparent 65%),
+                radial-gradient(800px 540px at 100% 0%, rgba(17, 106, 255, 0.20), transparent 72%),
+                radial-gradient(700px 500px at 30% 100%, rgba(0, 217, 255, 0.14), transparent 74%),
+                var(--bg);
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            padding: 20px;
+        }}
+        body::before {{
+            content: "";
+            position: fixed;
+            inset: -20%;
+            background-image:
+                linear-gradient(rgba(98, 132, 198, 0.06) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(98, 132, 198, 0.06) 1px, transparent 1px);
+            background-size: 36px 36px;
+            transform: rotate(-8deg);
+            pointer-events: none;
+            filter: blur(0.4px);
+        }}
+        .orb {{
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(60px);
+            pointer-events: none;
+            z-index: 0;
+        }}
+        .orb-one {{ width: 280px; height: 280px; background: rgba(53, 116, 255, 0.35); top: 8%; left: 6%; }}
+        .orb-two {{ width: 320px; height: 320px; background: rgba(0, 225, 255, 0.22); bottom: 4%; right: 4%; }}
+        .auth-shell {{
+            position: relative;
+            z-index: 1;
+            width: min(460px, 100%);
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 22px;
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            box-shadow: 0 22px 80px rgba(8, 16, 40, 0.65);
+            padding: 28px 24px 24px;
+        }}
+        .auth-title {{ margin: 0 0 8px; font-size: 1.45rem; font-weight: 700; letter-spacing: 0.3px; }}
+        .auth-subtitle {{ margin: 0 0 24px; color: var(--subtext); font-size: 0.95rem; }}
+        .pin-wrap {{
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 10px;
+            margin: 8px 0 18px;
+        }}
+        .pin-box {{
+            height: 54px;
+            border-radius: 12px;
+            border: 1px solid rgba(143, 179, 235, 0.42);
+            background: rgba(8, 18, 36, 0.64);
+            color: var(--text);
+            font-size: 1.5rem;
+            text-align: center;
+            outline: none;
+            transition: border-color .18s ease, box-shadow .18s ease, transform .12s ease;
+        }}
+        .pin-box:focus {{
+            border-color: rgba(102, 179, 255, 0.95);
+            box-shadow: 0 0 0 3px rgba(47, 122, 255, 0.22);
+            transform: translateY(-1px);
+        }}
+        .auth-action {{
+            margin-top: 6px;
+            width: 100%;
+            border: none;
+            border-radius: 14px;
+            padding: 15px 16px;
+            font-size: 1.04rem;
+            font-weight: 700;
+            color: #fff;
+            background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+            cursor: pointer;
+            transition: transform .12s ease, box-shadow .18s ease, filter .18s ease;
+            box-shadow: 0 10px 28px rgba(44, 105, 220, 0.42);
+            touch-action: manipulation;
+        }}
+        .auth-action:hover {{ filter: brightness(1.04); transform: translateY(-1px); }}
+        .auth-action:active {{ transform: translateY(2px) scale(0.995); box-shadow: 0 5px 16px rgba(34, 88, 193, 0.35); }}
+        .auth-error {{
+            margin: 0 0 12px;
+            color: var(--danger);
+            font-weight: 700;
+            min-height: 20px;
+        }}
+        .pin-wrap.is-error {{ animation: shake .32s ease-in-out 0s 2; }}
+        @keyframes shake {{
+            0%, 100% {{ transform: translateX(0); }}
+            20% {{ transform: translateX(-6px); }}
+            40% {{ transform: translateX(6px); }}
+            60% {{ transform: translateX(-5px); }}
+            80% {{ transform: translateX(5px); }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="orb orb-one"></div>
+    <div class="orb orb-two"></div>
+
+    <section class="auth-shell">
+        <h1 class="auth-title">Secure Console Access</h1>
+        <p class="auth-subtitle">Enter the one-time PIN shown on the host PC.</p>
+        <p class='auth-error'>{0}</p>
+        <form id="authForm" method="post" action="/auth" autocomplete="off">
+            <div id="pinWrap" class="pin-wrap {1}">
+                <input class="pin-box" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="PIN digit 1">
+                <input class="pin-box" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="PIN digit 2">
+                <input class="pin-box" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="PIN digit 3">
+                <input class="pin-box" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="PIN digit 4">
+                <input class="pin-box" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="PIN digit 5">
+                <input class="pin-box" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="PIN digit 6">
+            </div>
+            <input type="hidden" id="pin" name="pin" value="">
+            <button type="submit" class="auth-action">Authenticate</button>
+        </form>
+    </section>
+
+    <script>
+        (function() {{
+            var form = document.getElementById('authForm');
+            var wrap = document.getElementById('pinWrap');
+            var hidden = document.getElementById('pin');
+            var boxes = Array.prototype.slice.call(document.querySelectorAll('.pin-box'));
+
+            function onlyDigit(value) {{
+                return (value || '').replace(/\D/g, '').slice(0, 1);
+            }}
+
+            boxes.forEach(function(box, index) {{
+                box.addEventListener('input', function(e) {{
+                    var digit = onlyDigit(e.target.value);
+                    e.target.value = digit;
+                    if (digit && index < boxes.length - 1) {{
+                        boxes[index + 1].focus();
+                        boxes[index + 1].select();
+                    }}
+                }});
+
+                box.addEventListener('keydown', function(e) {{
+                    if (e.key === 'Backspace' && !box.value && index > 0) {{
+                        boxes[index - 1].focus();
+                        boxes[index - 1].value = '';
+                    }}
+                    if (e.key === 'ArrowLeft' && index > 0) {{
+                        boxes[index - 1].focus();
+                        e.preventDefault();
+                    }}
+                    if (e.key === 'ArrowRight' && index < boxes.length - 1) {{
+                        boxes[index + 1].focus();
+                        e.preventDefault();
+                    }}
+                }});
+
+                box.addEventListener('paste', function(e) {{
+                    var text = (e.clipboardData || window.clipboardData).getData('text') || '';
+                    var digits = text.replace(/\D/g, '').slice(0, boxes.length).split('');
+                    if (!digits.length) return;
+                    e.preventDefault();
+                    boxes.forEach(function(item, i) {{ item.value = digits[i] || ''; }});
+                    var focusIndex = Math.min(digits.length, boxes.length - 1);
+                    boxes[focusIndex].focus();
+                }});
+            }});
+
+            form.addEventListener('submit', function(e) {{
+                var pin = boxes.map(function(item) {{ return onlyDigit(item.value); }}).join('');
+                if (pin.length !== 6) {{
+                    e.preventDefault();
+                    wrap.classList.remove('is-error');
+                    void wrap.offsetWidth;
+                    wrap.classList.add('is-error');
+                    return;
+                }}
+                hidden.value = pin;
+            }});
+
+            if (boxes.length) {{ boxes[0].focus(); }}
+        }})();
+    </script>
+</body>
+</html>
 "@
 
     # プレゼンテーション実行中画面 (パラメータ: {0}=FileName)
@@ -544,6 +761,10 @@ function Get-UserAction {
         Write-Host $line -ForegroundColor Cyan
         Write-Host "   Presentation Controller V7.4" -ForegroundColor White -BackgroundColor DarkCyan
         Write-Host $line -ForegroundColor Cyan
+        Write-Host " [One-Time PIN]" -ForegroundColor Magenta
+        $pinDisplay = ([string]$script:AuthPin).ToCharArray() -join ' '
+        Write-Host "    $pinDisplay" -ForegroundColor Cyan
+        Write-Host ""
         foreach ($adapter in $adapters) {
             Write-Host " [Web URL - $($adapter.InterfaceAlias)] http://$($adapter.IPAddress):$($WebPort)/" -ForegroundColor Yellow
         }
@@ -676,6 +897,41 @@ function Get-UserAction {
             $req = $context.Request
             $res = $context.Response
             $url = $req.Url.LocalPath.ToLower()
+
+            $cookie = $req.Cookies["SessionToken"]
+            $isAuthenticated = ($cookie -and $cookie.Value -eq $script:SessionToken)
+
+            if (-not $isAuthenticated) {
+                if ($url -eq "/auth" -and $req.HttpMethod -eq "POST") {
+                    $postedPin = ""
+                    if ($req.HasEntityBody) {
+                        $authReader = New-Object System.IO.StreamReader($req.InputStream, $req.ContentEncoding)
+                        $authBody = $authReader.ReadToEnd()
+                        $authReader.Close()
+                        if ([System.Web.HttpUtility]::UrlDecode($authBody) -match "(?:^|&)pin=([^&]*)") {
+                            $postedPin = [System.Web.HttpUtility]::UrlDecode($matches[1])
+                        }
+                    }
+
+                    if ($postedPin -eq [string]$script:AuthPin) {
+                        try {
+                            $res.StatusCode = 302
+                            $res.AddHeader("Set-Cookie", "SessionToken=$($script:SessionToken); HttpOnly; Path=/")
+                            $res.AddHeader("Location", "/")
+                            $res.Close()
+                        } catch {}
+                    } else {
+                        $resHtml = $script:HtmlTemplates.AuthView -f "Invalid PIN", "is-error"
+                        Send-HttpResponse -Response $res -Content $resHtml
+                    }
+                } else {
+                    $resHtml = $script:HtmlTemplates.AuthView -f "", ""
+                    Send-HttpResponse -Response $res -Content $resHtml
+                }
+
+                $contextTask = $listener.GetContextAsync()
+                continue
+            }
             
             $resHtml = $mainHtml
             
