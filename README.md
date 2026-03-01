@@ -10,7 +10,7 @@
 
 I created `ppt-orchestrator` out of pure frustration with how presentation events are typically handled at companies and schools. Time and again, I witnessed events delayed or derailed by clumsy slide transitions, accidental misclicks, and technical hiccups. 
 
-Worse yet, simply because I was "the guy who knows a bit about computers," I was constantly appointed as the designated slide-switcher. It was a tedious and stressful role where one wrong click could ruin the flow of a speaker's presentation.
+Worse yet, simply because I was "the guy who knows a bit about computers," I was constantly appointed as the designated slide-switcher. It was a tedious and stressful role where a single misclick could launch the wrong presentation and cause frustrating delays to the entire event schedule.
 
 I wanted to solve this problem once and for all and automate myself out of that stressful job. My absolute non-negotiable requirement for this project was that **the solution had to be completely self-contained using only standard Windows features**. It had to be strictly "zero-dependency" with absolutely no additional installations required, ensuring it could be instantly deployed on any heavily restricted corporate PC.
 
