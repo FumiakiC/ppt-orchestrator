@@ -599,6 +599,10 @@ function Send-HttpResponse {
             $Response.ContentType = $ContentType
             $Response.ContentLength64 = $buffer.Length
             $Response.KeepAlive = $false
+            # ブラウザキャッシュを完全に無効化 (Req 7)
+            $Response.AddHeader("Cache-Control", "no-cache, no-store, must-revalidate")
+            $Response.AddHeader("Pragma", "no-cache")
+            $Response.AddHeader("Expires", "0")
             $Response.OutputStream.Write($buffer, 0, $buffer.Length)
         }
     } catch {
@@ -607,6 +611,22 @@ function Send-HttpResponse {
     } finally {
         try { $Response.Close() } catch {}
     }
+}
+
+# 安全にGetContextAsyncを呼び出すヘルパー関数 (Req 3)
+function Get-SafeContextAsync {
+    param([System.Net.HttpListener]$Listener)
+    $maxRetries = 10
+    for ($i = 0; $i -lt $maxRetries; $i++) {
+        try {
+            return $Listener.GetContextAsync()
+        } catch {
+            Write-Host " [Warning] GetContextAsync failed, retrying ($($i+1)/$maxRetries)... $($_.Exception.Message)" -ForegroundColor Yellow
+            Start-Sleep -Milliseconds 500
+        }
+    }
+    Write-Host " [Error] GetContextAsync failed after $maxRetries retries." -ForegroundColor Red
+    return $null
 }
 
 # ============================================================================== 
@@ -638,10 +658,33 @@ function Watch-RunningPresentation {
         while ($isFileOpen) {
             # 1. Webリクエスト確認
             if ($script:ContextTask -and $script:ContextTask.AsyncWaitHandle.WaitOne(100)) {
-                $context = $script:ContextTask.Result
+                # ネットワーク瞬断対策：ContextTask.Resultの読み取りを保護 (Req 2)
+                try {
+                    $context = $script:ContextTask.Result
+                } catch {
+                    Write-Host " [Warning] Context read failed in Watch: $($_.Exception.Message)" -ForegroundColor Yellow
+                    $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+                    continue
+                }
                 $req = $context.Request
                 $res = $context.Response
                 $path = $req.Url.LocalPath.ToLower()
+
+                # 認証ミドルウェア：Cookie確認 (Req 6)
+                $isAuthenticated = $false
+                if ($req.Cookies["SessionToken"]) {
+                    if ($req.Cookies["SessionToken"].Value -eq $script:SessionToken) {
+                        $isAuthenticated = $true
+                    }
+                }
+
+                # /status以外は認証必須
+                if (-not $isAuthenticated -and $path -ne "/status") {
+                    $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", ""
+                    Send-HttpResponse -Response $res -Content $authHtml
+                    $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+                    continue
+                }
 
                 if ($path -eq "/status") {
                     # JSからの生存確認用：発表中は "running" を返す
@@ -655,7 +698,7 @@ function Watch-RunningPresentation {
                         $res.AddHeader("Location", "/")
                         $res.Close()
                     } catch {}
-                    $script:ContextTask = $Listener.GetContextAsync()
+                    $script:ContextTask = Get-SafeContextAsync -Listener $Listener
                     break 
                 } 
                 else {
@@ -664,19 +707,31 @@ function Watch-RunningPresentation {
                 }
                 
                 # 次のリクエスト待ち準備
-                $script:ContextTask = $Listener.GetContextAsync()
+                $script:ContextTask = Get-SafeContextAsync -Listener $Listener
             }
 
-            # 2. PowerPointの状態確認
+            # 2. PowerPointの状態確認 (Req 1: COM通信エラーの適切な判別)
             $stillOpen = $false
             try {
+                $null = $PptApp.Presentations.Count
                 foreach ($p in $PptApp.Presentations) {
                     if ($p.FullName -eq $TargetFileItem.FullName) {
                         $stillOpen = $true
                         break
                     }
                 }
-            } catch { $stillOpen = $false }
+            } catch {
+                $errMsg = $_.Exception.Message
+                if ($errMsg -match '0x80010001|0x800A175D|enumerat|modified|変更されました') {
+                    # ダイアログ表示中等の一時的なCOMエラー → まだ開いていると判定
+                    $stillOpen = $true
+                    Write-Host " [Warning] COM transient error (presentation assumed still open): $errMsg" -ForegroundColor Yellow
+                } else {
+                    # プロセス完全終了等の致命的エラー
+                    $stillOpen = $false
+                    Write-Host " [Warning] COM fatal error (presentation assumed closed): $errMsg" -ForegroundColor Yellow
+                }
+            }
             
             if (-not $stillOpen) {
                 $status = "NormalEnd"
@@ -868,7 +923,14 @@ function Get-UserAction {
         
         # --- Web確認 ---
         if ($script:ContextTask -and $script:ContextTask.AsyncWaitHandle.WaitOne(100)) {
-            $context = $script:ContextTask.Result
+            # ネットワーク瞬断対策：ContextTask.Resultの読み取りを保護 (Req 2)
+            try {
+                $context = $script:ContextTask.Result
+            } catch {
+                Write-Host " [Warning] Context read failed in UserAction: $($_.Exception.Message)" -ForegroundColor Yellow
+                $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+                continue
+            }
             $req = $context.Request
             $res = $context.Response
             $url = $req.Url.LocalPath.ToLower()
@@ -885,7 +947,7 @@ function Get-UserAction {
             if (-not $isAuthenticated -and $url -ne "/auth" -and $url -ne "/status") {
                 $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", ""
                 Send-HttpResponse -Response $res -Content $authHtml
-                $script:ContextTask = $Listener.GetContextAsync()
+                $script:ContextTask = Get-SafeContextAsync -Listener $Listener
                 continue
             }
             
@@ -903,7 +965,7 @@ function Get-UserAction {
                 if ($currentTime -lt $script:LastAuthFailedTime.AddSeconds(1)) {
                     $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", "error"
                     Send-HttpResponse -Response $res -Content $authHtml
-                    $script:ContextTask = $Listener.GetContextAsync()
+                    $script:ContextTask = Get-SafeContextAsync -Listener $Listener
                     continue
                 }
                 
@@ -917,7 +979,7 @@ function Get-UserAction {
                             $res.StatusCode = 302
                             $res.Headers.Add("Location", "/")
                             Send-HttpResponse -Response $res -Content ""
-                            $script:ContextTask = $Listener.GetContextAsync()
+                            $script:ContextTask = Get-SafeContextAsync -Listener $Listener
                             continue
                         }
                     }
@@ -926,7 +988,7 @@ function Get-UserAction {
                 $script:LastAuthFailedTime = Get-Date
                 $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", "error"
                 Send-HttpResponse -Response $res -Content $authHtml
-                $script:ContextTask = $Listener.GetContextAsync()
+                $script:ContextTask = Get-SafeContextAsync -Listener $Listener
                 continue
             }
             
@@ -943,7 +1005,7 @@ function Get-UserAction {
                 }
                 Send-HttpResponse -Response $res -Content $statusText -ContentType "text/plain"
                 
-                $script:ContextTask = $Listener.GetContextAsync()
+                $script:ContextTask = Get-SafeContextAsync -Listener $Listener
                 continue
             }
 
@@ -978,7 +1040,7 @@ function Get-UserAction {
                  break
             }
 
-            $script:ContextTask = $Listener.GetContextAsync()
+            $script:ContextTask = Get-SafeContextAsync -Listener $Listener
         }
 
         # --- コンソール確認 ---
@@ -1144,7 +1206,7 @@ try {
     $listener.Prefixes.Add("http://+:$WebPort/")
     try {
         $listener.Start()
-        $script:ContextTask = $listener.GetContextAsync()
+        $script:ContextTask = Get-SafeContextAsync -Listener $listener
     } catch {
         Write-Warning "Web control is unavailable due to port conflict. Only keyboard operations are available."
     }
@@ -1180,6 +1242,27 @@ try {
         # --- B. プレゼン実行 ---
         $presentation = $null
         $status = "NormalEnd"
+
+        # PowerPointプロセスの生存確認と自動復旧 (Req 5)
+        try {
+            $null = $pptApp.Name
+            $null = $pptApp.Version
+        } catch {
+            Write-Host " [Warning] PowerPoint COM object is dead. Attempting recovery..." -ForegroundColor Yellow
+            try { Release-ComObject -obj $pptApp } catch {}
+            $pptApp = $null
+            [System.GC]::Collect()
+            [System.GC]::WaitForPendingFinalizers()
+            try {
+                $pptApp = New-Object -ComObject PowerPoint.Application
+                $pptApp.Visible = [Microsoft.Office.Core.MsoTriState]::msoTrue
+                Write-Host " [System] PowerPoint COM object recovered successfully." -ForegroundColor Green
+            } catch {
+                Write-Host " [Error] Failed to recover PowerPoint: $($_.Exception.Message)" -ForegroundColor Red
+                Start-Sleep 3
+                continue
+            }
+        }
 
         try {
             Write-Host " >> Opening: $($targetFileItem.Name)" -ForegroundColor Cyan
@@ -1227,7 +1310,8 @@ try {
             }
 
         } catch {
-            Write-Error "Error: $($_.Exception.Message)"
+            # Write-Error は $ErrorActionPreference='Stop' で自爆するため Write-Host に変更 (Req 4)
+            Write-Host " [Error] $($_.Exception.Message)" -ForegroundColor Red
             if ($presentation) { try { $presentation.Close() } catch {} }
             Start-Sleep 2
         } finally {
