@@ -70,6 +70,7 @@ $script:HtmlTemplates = @{
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
     <title>{0}</title>
     <style>
+        *, *::before, *::after {{ box-sizing: border-box; }}
         body {{
             font-family: 'Segoe UI', system-ui, sans-serif;
             background: #000000;
@@ -78,9 +79,11 @@ $script:HtmlTemplates = @{
             padding: 20px;
             margin: 0;
             min-height: 100vh;
+            min-height: 100dvh;
             position: relative;
             overflow-x: hidden;
             height: 100vh;
+            height: 100dvh;
             overflow: hidden;
             display: flex;
             flex-direction: column;
@@ -88,6 +91,7 @@ $script:HtmlTemplates = @{
         .container {{
             max-width: 600px;
             width: 100%;
+            min-width: 0;
             margin: 0 auto;
             position: relative;
             z-index: 10;
@@ -318,6 +322,7 @@ $script:HtmlTemplates = @{
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: #000000;
             min-height: 100vh;
+            min-height: 100dvh;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -356,6 +361,7 @@ $script:HtmlTemplates = @{
             justify-content: center;
             gap: 10px;
             margin-bottom: 30px;
+            width: 100%;
         }}
         .pin-inputs.shake {{
             animation: shake 0.5s;
@@ -366,7 +372,9 @@ $script:HtmlTemplates = @{
             20%, 40%, 60%, 80% {{ transform: translateX(8px); }}
         }}
         .pin-box {{
-            width: 55px;
+            flex: 1 1 0;
+            min-width: 0;
+            max-width: 55px;
             height: 65px;
             font-size: 2rem;
             text-align: center;
@@ -1056,7 +1064,8 @@ function Get-UserAction {
                     "/exit"   { 
                         $resultAction = "Exit"
                         $actionSetTime = Get-Date
-                        $shuttingDown = $true 
+                        $shuttingDown = $true
+                        $shutdownDeadline = (Get-Date).AddSeconds(5)
                         $resHtml = $exitHtml 
                     }
                     "/select" {
@@ -1070,13 +1079,13 @@ function Get-UserAction {
                 $resHtml = $exitHtml
             }
 
+            # 状態変化中のGETリクエストにはprocessing画面を返す（他端末操作時のチカチカ防止）
+            if ($req.HttpMethod -eq "GET" -and $url -ne "/status" -and $url -ne "/exit" -and $resultAction -ne $null) {
+                $resHtml = $processingHtml
+            }
+
             # 安全にレスポンスを返す
             Send-HttpResponse -Response $res -Content $resHtml
-
-            if ($resultAction -eq "Exit" -and -not $shutdownDeadline) {
-                 Start-Sleep -Milliseconds 500
-                 break
-            }
 
             $script:ContextTask = Get-SafeContextAsync -Listener $Listener
         }
