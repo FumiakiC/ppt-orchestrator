@@ -78,8 +78,6 @@ $script:HtmlTemplates = @{
             text-align: center;
             padding: 20px;
             margin: 0;
-            min-height: 100vh;
-            min-height: 100dvh;
             position: relative;
             overflow-x: hidden;
             height: 100vh;
@@ -303,7 +301,7 @@ $script:HtmlTemplates = @{
         <div class="end-icon">✔</div>
         <h1>System Shutdown</h1>
         <p style="font-size:1.2rem; color:#fff;">Please close this tab<br>or window.</p>
-        <p style="color:#666; margin-top:20px;">Server has been shut down.</p>
+        <p style="color:#666; margin-top:20px;">System is shutting down safely...</p>
     </div>
 </body></html>
 "@
@@ -1080,8 +1078,12 @@ function Get-UserAction {
             }
 
             # 状態変化中のGETリクエストにはprocessing画面を返す（他端末操作時のチカチカ防止）
-            if ($req.HttpMethod -eq "GET" -and $url -ne "/status" -and $url -ne "/exit" -and $resultAction -ne $null) {
-                $resHtml = $processingHtml
+            if ($req.HttpMethod -eq "GET" -and $url -ne "/status" -and $url -ne "/exit") {
+                if ($shuttingDown) {
+                    $resHtml = $exitHtml
+                } elseif ($resultAction -ne $null) {
+                    $resHtml = $processingHtml
+                }
             }
 
             # 安全にレスポンスを返す
