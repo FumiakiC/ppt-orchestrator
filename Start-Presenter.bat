@@ -106,7 +106,7 @@ REM -----------------------------------------------
 echo Starting PowerShell script with administrator privileges...
 echo.
 
-"%POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0%SCRIPT_NAME%" -TargetFolderPath "%~dp0"
+"%POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0%SCRIPT_NAME%" -TargetFolderPath "%~dp0."
 
 REM -----------------------------------------------
 REM Cleanup: Remove URLACL and Firewall rule

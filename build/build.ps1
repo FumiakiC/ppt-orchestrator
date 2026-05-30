@@ -5,7 +5,7 @@
 
 $srcDir  = Join-Path $PSScriptRoot "..\src"
 $distDir = Join-Path $PSScriptRoot "..\dist"
-$outFile = Join-Path $distDir "Invoke-PPTController.ps1"
+$outFile = Join-Path $distDir "presentation-controller.ps1"
 
 if (-not (Test-Path $distDir)) {
     New-Item -Path $distDir -ItemType Directory | Out-Null
@@ -50,7 +50,8 @@ foreach ($file in $files) {
 }
 
 $combined = $parts -join "`n"
-[System.IO.File]::WriteAllText($outFile, $combined, [System.Text.Encoding]::UTF8)
+$utf8BOM = New-Object System.Text.UTF8Encoding($true)
+[System.IO.File]::WriteAllText($outFile, $combined, $utf8BOM)
 
 Write-Host "Build complete: $outFile" -ForegroundColor Green
 Write-Host "  Total size: $([Math]::Round((Get-Item $outFile).Length / 1KB, 1)) KB" -ForegroundColor Gray
