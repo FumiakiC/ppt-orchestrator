@@ -1,0 +1,31 @@
+name: Build and Package PPT-Orchestrator
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Build Script
+        shell: pwsh
+        run: |
+          ./build/build.ps1
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ppt-orchestrator-ready-to-use
+          path: |
+            dist/presentation-controller.ps1
+            Start-Presenter.bat
+            README.md
+          retention-days: 90
