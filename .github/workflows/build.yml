@@ -7,8 +7,13 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+# デフォルトの権限を最小限（読み取り専用）に設定
+permissions:
+  contents: read
+
 jobs:
-  build:
+  # 1. ビルドとパッケージングの検証ジョブ（PR時も実行されるが、権限はreadのみ）
+  build-check:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,12 +25,61 @@ jobs:
         run: |
           ./build/build.ps1
 
+      - name: Package files into ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path package -Force | Out-Null
+          Copy-Item -Path Start-Presenter.bat -Destination package/
+          Copy-Item -Path README.md -Destination package/
+
+          New-Item -ItemType Directory -Path package/dist -Force | Out-Null
+          Copy-Item -Path dist/presentation-controller.ps1 -Destination package/dist/
+
+          Compress-Archive -Path package/* -DestinationPath ppt-orchestrator-ready-to-use.zip -Force
+          Write-Host "✅ Created ppt-orchestrator-ready-to-use.zip" -ForegroundColor Green
+
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ppt-orchestrator-ready-to-use
-          path: |
-            dist/presentation-controller.ps1
-            Start-Presenter.bat
-            README.md
+          name: ppt-orchestrator-package
+          path: ppt-orchestrator-ready-to-use.zip
           retention-days: 90
+
+  # 2. リリース公開ジョブ（mainマージ時のみ実行され、書き込み権限を持つ）
+  release:
+    needs: build-check
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    # このジョブにのみ書き込み権限を付与
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download built ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: ppt-orchestrator-package
+
+      - name: Create GitHub Release and Upload ZIP
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v7.4.${{ github.run_number }}
+          name: Release v7.4.${{ github.run_number }}
+          body: |
+            ## 🎭 PPT-Orchestrator 最新自動ビルドパッケージ
+            コミット `${{ github.sha }}` から自動生成された製品版パッケージです。
+
+            ### 📦 含まれるファイル / Included Files
+            - `Start-Presenter.bat` (管理者権限・ネットワーク自動設定ランチャー)
+            - `dist/presentation-controller.ps1` (堅牢化・XSS対策適用済み本体スクリプト)
+            - `README.md` (取扱説明書)
+
+            ### 🚀 使い方 / How to Use
+            1. 下記の **`ppt-orchestrator-ready-to-use.zip`** をダウンロードします。
+            2. ダウンロードしたZIPファイルを任意の場所へ解凍（展開）します。
+            3. 解凍してできたフォルダー内に、本番で使用する PowerPoint ファイル（`.pptx`）を入れます。
+            4. **`Start-Presenter.bat`** をダブルクリックして起動します。
+          files: ppt-orchestrator-ready-to-use.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
