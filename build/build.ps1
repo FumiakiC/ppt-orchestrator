@@ -1,10 +1,10 @@
 ﻿# ==============================================================================
 #  ビルドスクリプト: src/ の各ファイルを単一の .ps1 に統合する
-#  出力先: dist/Invoke-PPTController.ps1
+#  出力先: dist/presentation-controller.ps1
 # ==============================================================================
 
-$srcDir  = Join-Path $PSScriptRoot "..\src"
-$distDir = Join-Path $PSScriptRoot "..\dist"
+$srcDir  = Join-Path (Split-Path $PSScriptRoot -Parent) "src"
+$distDir = Join-Path (Split-Path $PSScriptRoot -Parent) "dist"
 $outFile = Join-Path $distDir "presentation-controller.ps1"
 
 if (-not (Test-Path $distDir)) {
@@ -43,7 +43,7 @@ foreach ($file in $files) {
 
     # main.ps1 のドットソース行を除去する（ビルド後は不要）
     if ($file -eq "main.ps1") {
-        $content = $content -replace '(?m)^\. "\$PSScriptRoot\\.*\.ps1"\r?\n', ''
+        $content = $content -replace '(?m)^\.\s+["'']\$PSScriptRoot[\\/].*\.ps1["'']\r?\n', ''
     }
 
     $parts += "# --- $file ---`n" + $content.TrimEnd() + "`n"

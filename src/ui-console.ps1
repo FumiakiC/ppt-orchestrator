@@ -116,26 +116,28 @@
 
     $bodyContent = ""
     if ($Mode -eq 'Lobby') {
-        $nextTxt = if ($ActiveFiles) { $ActiveFiles[0].Name } else { "None" }
+        $nextTxt = if ($ActiveFiles) { [System.Web.HttpUtility]::HtmlEncode($ActiveFiles[0].Name) } else { "None" }
         $stBtn   = if ($ActiveFiles) { "" } else { "disabled style='opacity:0.5;'" }
 
         $listHtml = "<div class='list-container'><h3 style='color:#28a745;font-size:0.9rem;border-bottom:1px solid #555;'>Pending</h3>"
         if (!$ActiveFiles) { $listHtml += "<p>None</p>" }
         foreach ($f in $ActiveFiles) {
-            $listHtml += "<form method='post' action='/select' style='margin:0;'><input type='hidden' name='filename' value='$($f.Name)'><button class='btn btn-file'>$($f.Name)</button></form>"
+            $fname = [System.Web.HttpUtility]::HtmlEncode($f.Name)
+            $listHtml += "<form method='post' action='/select' style='margin:0;'><input type='hidden' name='filename' value='$fname'><button class='btn btn-file'>$fname</button></form>"
         }
         $listHtml += "<h3 style='color:#6c757d;font-size:0.9rem;border-bottom:1px solid #555;margin-top:20px;'>Completed</h3>"
         foreach ($f in $FinishedFiles) {
-            $listHtml += "<form method='post' action='/select' style='margin:0;'><input type='hidden' name='filename' value='$($f.Name)'><button class='btn btn-file btn-finished'>$($f.Name)</button></form>"
+            $fname = [System.Web.HttpUtility]::HtmlEncode($f.Name)
+            $listHtml += "<form method='post' action='/select' style='margin:0;'><input type='hidden' name='filename' value='$fname'><button class='btn btn-file btn-finished'>$fname</button></form>"
         }
         $listHtml += "</div>"
 
         $bodyContent = $script:HtmlTemplates.LobbyView -f $stBtn, $nextTxt, $listHtml
     } else {
-        $nxtLbl = if ($NextFileName) { "Start Next Slide<br><span style='font-size:0.8rem;font-weight:normal'>$NextFileName</span>" } else { "No slides in queue" }
+        $nxtLbl = if ($NextFileName) { "Start Next Slide<br><span style='font-size:0.8rem;font-weight:normal'>$([System.Web.HttpUtility]::HtmlEncode($NextFileName))</span>" } else { "No slides in queue" }
         $nxtSt  = if ($NextFileName) { "" } else { "disabled style='opacity:0.5;'" }
 
-        $bodyContent = $script:HtmlTemplates.DialogView -f $CurrentFileName, $nxtSt, $nxtLbl
+        $bodyContent = $script:HtmlTemplates.DialogView -f ([System.Web.HttpUtility]::HtmlEncode($CurrentFileName)), $nxtSt, $nxtLbl
     }
 
     $mainHtml       = $head + $bodyContent + $script:HtmlTemplates.PollingScript + "</div></body></html>"
@@ -155,7 +157,7 @@
     while ($true) {
 
         # --- Web確認 ---
-        if ($script:ContextTask -and $script:ContextTask.AsyncWaitHandle.WaitOne(100)) {
+        if ($script:ContextTask -and $script:ContextTask.Wait(100)) {
             try {
                 $context = $script:ContextTask.Result
             } catch {

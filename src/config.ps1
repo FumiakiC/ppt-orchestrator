@@ -1,6 +1,6 @@
 ﻿param(
     [string]$TargetFolderPath = $(
-        $cwd = (Get-Location).Path
+        $cwd = $ExecutionContext.SessionState.Path.CurrentFileSystemLocation.Path
         if (Get-ChildItem -Path $cwd -Filter '*.pptx' -File -ErrorAction SilentlyContinue | Select-Object -First 1) {
             $cwd
         } elseif ($PSScriptRoot) {

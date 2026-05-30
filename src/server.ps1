@@ -28,8 +28,13 @@ function Invoke-WebRequestProcessor {
     # --- POSTボディ一括読み込み ---
     $body = $null
     if ($req.HttpMethod -eq "POST" -and $req.HasEntityBody) {
-        $r = New-Object System.IO.StreamReader($req.InputStream, $req.ContentEncoding)
-        $body = $r.ReadToEnd(); $r.Close()
+        $encoding = if ($req.ContentEncoding) { $req.ContentEncoding } else { [System.Text.Encoding]::UTF8 }
+        $r = New-Object System.IO.StreamReader($req.InputStream, $encoding)
+        try {
+            $body = $r.ReadToEnd()
+        } finally {
+            $r.Dispose()
+        }
     }
 
     # --- /auth POST ---

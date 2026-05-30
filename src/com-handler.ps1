@@ -6,7 +6,7 @@
     )
 
     $head     = Get-HtmlHeader -Title "Now Playing" -BgColor "#000000"
-    $bodyHtml = $script:HtmlTemplates.NowPlayingView -f $TargetFileItem.Name
+    $bodyHtml = $script:HtmlTemplates.NowPlayingView -f ([System.Web.HttpUtility]::HtmlEncode($TargetFileItem.Name))
     $fullHtml = $head + $bodyHtml
 
     $status = "NormalEnd"
@@ -16,7 +16,7 @@
         while ($isFileOpen) {
 
             # 1. Webリクエスト確認
-            if ($script:ContextTask -and $script:ContextTask.AsyncWaitHandle.WaitOne(100)) {
+            if ($script:ContextTask -and $script:ContextTask.Wait(100)) {
                 try {
                     $context = $script:ContextTask.Result
                 } catch {
@@ -40,8 +40,13 @@
                 if ($path -eq "/auth" -and $req.HttpMethod -eq "POST") {
                     $authBody = $null
                     if ($req.HasEntityBody) {
-                        $sr = New-Object System.IO.StreamReader($req.InputStream, $req.ContentEncoding)
-                        $authBody = $sr.ReadToEnd(); $sr.Close()
+                        $encoding = if ($req.ContentEncoding) { $req.ContentEncoding } else { [System.Text.Encoding]::UTF8 }
+                        $sr = New-Object System.IO.StreamReader($req.InputStream, $encoding)
+                        try {
+                            $authBody = $sr.ReadToEnd()
+                        } finally {
+                            $sr.Dispose()
+                        }
                     }
                     Invoke-AuthHandler -Request $req -Response $res -Body $authBody | Out-Null
                     $script:ContextTask = Get-SafeContextAsync -Listener $Listener
