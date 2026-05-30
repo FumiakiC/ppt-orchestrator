@@ -1,25 +1,29 @@
 ﻿# ==============================================================================
-#  対話型プレゼンテーション実行スクリプト V7.3 (Network Error Fix)
-#  （クライアント切断によるコンソール強制終了バグ修正版）
+#  対話型プレゼンテーション実行スクリプト (Built by build/build.ps1)
 # ==============================================================================
 
+# --- config.ps1 ---
 param(
-    [string]$TargetFolderPath = $(if ($PSScriptRoot) { $PSScriptRoot } else { Get-Location }),
+    [string]$TargetFolderPath = $(
+        $cwd = (Get-Location).Path
+        if (Get-ChildItem -Path $cwd -Filter '*.pptx' -File -ErrorAction SilentlyContinue | Select-Object -First 1) {
+            $cwd
+        } elseif ($PSScriptRoot) {
+            Split-Path $PSScriptRoot -Parent
+        } else {
+            $cwd
+        }
+    ),
     [string]$FinishFolderName = "finish",
     [int]$WebPort = 8090
 )
 
-# エラー発生時に停止する設定ですが、送信エラーは個別にcatchして無視します
 $ErrorActionPreference = 'Stop'
 
-# アセンブリの読み込み
 Add-Type -AssemblyName System.Web
 
-# ============================================================================== 
-# コンソールウィンドウ制御（誤操作防止）
-# ============================================================================== 
-#region ConsoleWindow API
-Add-Type -TypeDefinition @"
+if (-not ("ConsoleWindow" -as [type])) {
+    Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
 
@@ -47,19 +51,14 @@ public class ConsoleWindow {
     }
 }
 "@
-#endregion
+}
 
-# ==============================================================================
-# セキュリティ：ワンタイムPIN認証
-# ==============================================================================
-$script:AuthPin = Get-Random -Minimum 100000 -Maximum 999999
-$script:SessionToken = [guid]::NewGuid().ToString('N')
-$script:LastAuthFailedTime = [DateTime]::MinValue
+$script:AuthPin             = Get-Random -Minimum 100000 -Maximum 999999
+$script:SessionToken        = [guid]::NewGuid().ToString('N')
+$script:LastAuthFailedTime  = [DateTime]::MinValue
+$script:ContextTask         = $null
 
-# ============================================================================== 
-# HTML/CSS/JSテンプレート集約
-# ============================================================================== 
-#region HTML/CSS/JS Templates
+# --- templates.ps1 ---
 $script:HtmlTemplates = @{
     # 共通HTMLヘッダー + CSS (パラメータ: {0}=Title, {1}=BgColor)
     HtmlHeader = @"
@@ -255,7 +254,7 @@ $script:HtmlTemplates = @{
     <form method="post" action="/stop">
         <button class="btn btn-stop">■ Stop Presentation</button>
     </form>
-    
+
     <script>
         window.startPolling(['running'], '/', {{ defaultDelay: 1500 }});
     </script>
@@ -432,7 +431,7 @@ $script:HtmlTemplates = @{
         <div class="lock-icon">🔒</div>
         <h1>Enter PIN Code</h1>
         <p class="subtitle">Please check your PC console for 6-digit PIN</p>
-        
+
         <form method="post" action="/auth" id="authForm">
             <div class="pin-inputs {1}" id="pinInputs">
                 <input type="text" class="pin-box {1}" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" id="pin1">
@@ -449,20 +448,20 @@ $script:HtmlTemplates = @{
     </div>
 
     <script>
-        var boxes = [document.getElementById('pin1'), document.getElementById('pin2'), document.getElementById('pin3'), 
+        var boxes = [document.getElementById('pin1'), document.getElementById('pin2'), document.getElementById('pin3'),
                      document.getElementById('pin4'), document.getElementById('pin5'), document.getElementById('pin6')];
         var submitBtn = document.getElementById('submitBtn');
         var pinValue = document.getElementById('pinValue');
         var form = document.getElementById('authForm');
         var errorMsg = document.getElementById('errorMsg');
         var pinInputsDiv = document.getElementById('pinInputs');
-        
+
         // エラー状態の場合は表示
         var hasError = '{1}' === 'error';
         if (hasError) {{
             errorMsg.classList.add('show');
         }}
-        
+
         boxes.forEach(function(box, index) {{
             // 数字のみ入力可能
             box.addEventListener('input', function(e) {{
@@ -471,28 +470,28 @@ $script:HtmlTemplates = @{
                     e.target.value = '';
                     return;
                 }}
-                
+
                 // エラー状態をクリア
                 box.classList.remove('error');
                 errorMsg.classList.remove('show');
                 pinInputsDiv.classList.remove('shake');
-                
+
                 // 次のボックスにフォーカス
                 if (val && index < 5) {{
                     boxes[index + 1].focus();
                 }}
-                
+
                 // すべて入力されたら送信ボタンを有効化
                 checkComplete();
             }});
-            
+
             // Backspaceで前のボックスに戻る
             box.addEventListener('keydown', function(e) {{
                 if (e.key === 'Backspace' && !e.target.value && index > 0) {{
                     boxes[index - 1].focus();
                 }}
             }});
-            
+
             // ペースト対応
             box.addEventListener('paste', function(e) {{
                 e.preventDefault();
@@ -511,17 +510,17 @@ $script:HtmlTemplates = @{
                 checkComplete();
             }});
         }});
-        
+
         function checkComplete() {{
             var complete = boxes.every(function(b) {{ return b.value.length === 1; }});
             submitBtn.disabled = !complete;
         }}
-        
+
         // フォーム送信時に6桁を結合
         form.addEventListener('submit', function() {{
             pinValue.value = boxes.map(function(b) {{ return b.value; }}).join('');
         }});
-        
+
         // 最初のボックスにフォーカス
         boxes[0].focus();
     </script>
@@ -529,14 +528,10 @@ $script:HtmlTemplates = @{
 </html>
 "@
 }
-#endregion
 
-# ------------------------------------------------------------
-# 1. ユーティリティ関数
-# ------------------------------------------------------------
+# --- utils.ps1 ---
 function Get-LocalActiveIPs {
     try {
-        # Get all adapters that are up and not virtual
         $adapters = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object {
             $_.Status -eq "Up" -and
             -not $_.Virtual -and
@@ -553,14 +548,13 @@ function Get-LocalActiveIPs {
             $_.InterfaceDescription -notlike "*Tailscale*" -and
             $_.InterfaceDescription -notlike "*ZeroTier*"
         }
-        
-        # Get IP addresses for each adapter
+
         $results = @()
         foreach ($adapter in $adapters) {
             $ipAddresses = Get-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {
                 $_.IPAddress -notlike "169.254.*" -and $_.IPAddress -notlike "0.0.0.0"
             }
-            
+
             foreach ($ipAddr in $ipAddresses) {
                 $results += @{
                     InterfaceAlias = $adapter.InterfaceAlias
@@ -568,15 +562,13 @@ function Get-LocalActiveIPs {
                 }
             }
         }
-        
-        # Fallback if no valid IPs found
+
         if ($results.Count -eq 0) {
             $results = @(@{ InterfaceAlias = "Local"; IPAddress = "localhost" })
         }
-        
+
         return $results
     } catch {
-        # Fallback on error
         return @(@{ InterfaceAlias = "Local"; IPAddress = "localhost" })
     }
 }
@@ -591,7 +583,6 @@ function Get-PptFiles {
     return Get-ChildItem -Path $Path -File | Where-Object { $_.Extension -in @('.ppt', '.pptx') -and $_.Name -notlike '~$*' } | Sort-Object Name
 }
 
-# 安全にレスポンスを返すためのラッパー関数 (今回の修正の要)
 function Send-HttpResponse {
     param(
         [System.Net.HttpListenerResponse]$Response,
@@ -605,26 +596,21 @@ function Send-HttpResponse {
             $Response.ContentType = $ContentType
             $Response.ContentLength64 = $buffer.Length
             $Response.KeepAlive = $false
-            # ブラウザキャッシュを完全に無効化 (Req 7)
             $Response.AddHeader("Cache-Control", "no-cache, no-store, must-revalidate")
             $Response.AddHeader("Pragma", "no-cache")
             $Response.AddHeader("Expires", "0")
             $Response.OutputStream.Write($buffer, 0, $buffer.Length)
         }
     } catch {
-        # ここで "The specified network name is no longer available" を握りつぶす
         # クライアントが切断されているため、エラーを出さずに無視してよい
     } finally {
         try { $Response.Close() } catch {}
     }
 }
 
-# 安全にGetContextAsyncを呼び出すヘルパー関数 (Req 3, 4)
 function Get-SafeContextAsync {
     param([System.Net.HttpListener]$Listener)
-    # リスナーが稼働している限りリトライを継続し、Web操作のデッドロックを防止する
     while ($true) {
-        # リスナーが停止/破棄済みなら即座に諦める
         try {
             if (-not $Listener.IsListening) {
                 return $null
@@ -635,7 +621,6 @@ function Get-SafeContextAsync {
         try {
             return $Listener.GetContextAsync()
         } catch [System.ObjectDisposedException] {
-            # リスナー自体が破棄済み → 復旧不可能
             return $null
         } catch {
             Write-Host " [Warning] GetContextAsync failed, retrying... $($_.Exception.Message)" -ForegroundColor Yellow
@@ -644,9 +629,12 @@ function Get-SafeContextAsync {
     }
 }
 
-# ==============================================================================
-# 認証ヘルパー関数 (DRY: Req 1)
-# ==============================================================================
+function Get-HtmlHeader {
+    param([string]$Title, [string]$BgColor = "#1a1a1a")
+    return $script:HtmlTemplates.HtmlHeader -f $Title, $BgColor
+}
+
+# --- auth.ps1 ---
 function Test-IsAuthenticated {
     param([System.Net.HttpListenerRequest]$Request)
     if ($Request.Cookies["SessionToken"]) {
@@ -655,14 +643,12 @@ function Test-IsAuthenticated {
     return $false
 }
 
-# /auth POST リクエストを処理する共通関数。認証成功時 $true、失敗時 $false を返す。
 function Invoke-AuthHandler {
     param(
         [System.Net.HttpListenerRequest]$Request,
         [System.Net.HttpListenerResponse]$Response,
         [string]$Body
     )
-    # レートリミット：認証失敗後1秒以内のリクエストを即座にエラーで返す
     $currentTime = Get-Date
     if ($currentTime -lt $script:LastAuthFailedTime.AddSeconds(1)) {
         $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", "error"
@@ -673,7 +659,6 @@ function Invoke-AuthHandler {
         if ([System.Web.HttpUtility]::UrlDecode($Body) -match "pin=([0-9]{6})") {
             $submittedPin = $matches[1]
             if ($submittedPin -eq $script:AuthPin.ToString()) {
-                # 認証成功：Cookieをセットしてリダイレクト
                 $Response.Headers.Add("Set-Cookie", "SessionToken=$script:SessionToken; HttpOnly; Path=/; SameSite=Strict")
                 $Response.StatusCode = 302
                 $Response.Headers.Add("Location", "/")
@@ -682,148 +667,123 @@ function Invoke-AuthHandler {
             }
         }
     }
-    # 認証失敗：エラー表示
     $script:LastAuthFailedTime = Get-Date
     $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", "error"
     Send-HttpResponse -Response $Response -Content $authHtml
     return $false
 }
 
-# ============================================================================== 
-# 2. 共通HTMLヘッダー・スタイル
-# ============================================================================== 
-function Get-HtmlHeader {
-    param([string]$Title, [string]$BgColor="#1a1a1a")
-    return $script:HtmlTemplates.HtmlHeader -f $Title, $BgColor
-}
-
-# ============================================================================== 
-# 3. 発表中の監視関数
-# ==============================================================================
-function Watch-RunningPresentation {
-    param (
-        [object]$PptApp,
-        [object]$TargetFileItem,
-        [System.Net.HttpListener]$Listener
+# --- server.ps1 ---
+# Get-UserAction のメインループから抽出したWebリクエスト処理。
+# 戻り値: @{ ShouldContinue; ResultAction; ResultFile; ActionSetTime; ShuttingDown; ShutdownDeadline }
+function Invoke-WebRequestProcessor {
+    param(
+        [System.Net.HttpListenerContext]$Context,
+        [string]$MainHtml,
+        [string]$ProcessingHtml,
+        [string]$ExitHtml,
+        [System.Net.HttpListener]$Listener,
+        [bool]$ShuttingDown,
+        [object]$ResultAction,
+        [object]$ShutdownDeadline
     )
 
-    $head = Get-HtmlHeader -Title "Now Playing" -BgColor "#000000"
-    $bodyHtml = $script:HtmlTemplates.NowPlayingView -f $TargetFileItem.Name
-    $fullHtml = $head + $bodyHtml
+    $req = $Context.Request
+    $res = $Context.Response
+    $url = $req.Url.LocalPath.ToLower()
 
-    $status = "NormalEnd"
-
-    try {
-        $isFileOpen = $true
-        while ($isFileOpen) {
-            # 1. Webリクエスト確認
-            if ($script:ContextTask -and $script:ContextTask.AsyncWaitHandle.WaitOne(100)) {
-                # ネットワーク瞬断対策：ContextTask.Resultの読み取りを保護 (Req 2)
-                try {
-                    $context = $script:ContextTask.Result
-                } catch {
-                    Write-Host " [Warning] Context read failed in Watch: $($_.Exception.Message)" -ForegroundColor Yellow
-                    $script:ContextTask = Get-SafeContextAsync -Listener $Listener
-                    continue
-                }
-                $req = $context.Request
-                $res = $context.Response
-                $path = $req.Url.LocalPath.ToLower()
-
-                # 認証ミドルウェア：Cookie確認 (共通関数使用)
-                $isAuthenticated = Test-IsAuthenticated -Request $req
-
-                # /status と /auth 以外は認証必須
-                if (-not $isAuthenticated -and $path -ne "/status" -and $path -ne "/auth") {
-                    $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", ""
-                    Send-HttpResponse -Response $res -Content $authHtml
-                    $script:ContextTask = Get-SafeContextAsync -Listener $Listener
-                    continue
-                }
-
-                # /auth POSTリクエスト処理（プレゼン中でもログイン可能にする）
-                if ($path -eq "/auth" -and $req.HttpMethod -eq "POST") {
-                    $authBody = $null
-                    if ($req.HasEntityBody) {
-                        $sr = New-Object System.IO.StreamReader($req.InputStream, $req.ContentEncoding)
-                        $authBody = $sr.ReadToEnd(); $sr.Close()
-                    }
-                    Invoke-AuthHandler -Request $req -Response $res -Body $authBody | Out-Null
-                    $script:ContextTask = Get-SafeContextAsync -Listener $Listener
-                    continue
-                }
-
-                if ($path -eq "/status") {
-                    # JSからの生存確認用：発表中は "running" を返す
-                    Send-HttpResponse -Response $res -Content "running" -ContentType "text/plain"
-                } 
-                elseif ($path -eq "/stop" -and $req.HttpMethod -eq "POST") {
-                    $status = "ManualStop"
-                    try {
-                        $res.StatusCode = 302
-                        $res.KeepAlive = $false
-                        $res.AddHeader("Location", "/")
-                        $res.Close()
-                    } catch {}
-                    $script:ContextTask = Get-SafeContextAsync -Listener $Listener
-                    break 
-                } 
-                else {
-                    # その他のアクセスには「発表中画面」を返す
-                    Send-HttpResponse -Response $res -Content $fullHtml
-                }
-                
-                # 次のリクエスト待ち準備
-                $script:ContextTask = Get-SafeContextAsync -Listener $Listener
-            }
-
-            # 2. PowerPointの状態確認 (Req 1: COM通信エラーの適切な判別)
-            $stillOpen = $false
-            try {
-                $null = $PptApp.Presentations.Count
-                foreach ($p in $PptApp.Presentations) {
-                    if ($p.FullName -eq $TargetFileItem.FullName) {
-                        $stillOpen = $true
-                        break
-                    }
-                }
-            } catch {
-                # HResult ベースの判定で OS 言語に依存しない堅牢なエラー分類
-                $hr = $_.Exception.HResult
-                if (-not $hr -and $_.Exception.InnerException) {
-                    $hr = $_.Exception.InnerException.HResult
-                }
-                # 0x80010001 (RPC_E_CALL_REJECTED) / 0x800A175D (PPT busy/enum error)
-                $transientHResults = @(
-                    [int]0x80010001,  # RPC_E_CALL_REJECTED
-                    [int]0x800A175D   # PowerPoint enumeration error
-                )
-                if ($hr -and ($transientHResults -contains $hr)) {
-                    # ダイアログ表示中等の一時的なCOMエラー → まだ開いていると判定
-                    $stillOpen = $true
-                    Write-Host " [Warning] COM transient error (HResult: 0x$($hr.ToString('X8')), presentation assumed still open)" -ForegroundColor Yellow
-                } else {
-                    # プロセス完全終了等の致命的エラー
-                    $stillOpen = $false
-                    Write-Host " [Warning] COM fatal error (HResult: $(if($hr){'0x'+$hr.ToString('X8')}else{'N/A'}), presentation assumed closed): $($_.Exception.Message)" -ForegroundColor Yellow
-                }
-            }
-            
-            if (-not $stillOpen) {
-                $status = "NormalEnd"
-                break
-            }
-        }
-    } finally {
-        # HttpListener はメインフロー内で一元管理するため、ここでは Stop/Close しない
+    # --- 認証ミドルウェア ---
+    $isAuthenticated = Test-IsAuthenticated -Request $req
+    if (-not $isAuthenticated -and $url -ne "/auth" -and $url -ne "/status") {
+        $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", ""
+        Send-HttpResponse -Response $res -Content $authHtml
+        $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+        return @{ ShouldContinue = $true; ResultAction = $ResultAction; ResultFile = $null; ActionSetTime = $null; ShuttingDown = $ShuttingDown; ShutdownDeadline = $ShutdownDeadline }
     }
 
-    return $status
+    # --- POSTボディ一括読み込み ---
+    $body = $null
+    if ($req.HttpMethod -eq "POST" -and $req.HasEntityBody) {
+        $r = New-Object System.IO.StreamReader($req.InputStream, $req.ContentEncoding)
+        $body = $r.ReadToEnd(); $r.Close()
+    }
+
+    # --- /auth POST ---
+    if ($url -eq "/auth" -and $req.HttpMethod -eq "POST") {
+        Invoke-AuthHandler -Request $req -Response $res -Body $body | Out-Null
+        $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+        return @{ ShouldContinue = $true; ResultAction = $ResultAction; ResultFile = $null; ActionSetTime = $null; ShuttingDown = $ShuttingDown; ShutdownDeadline = $ShutdownDeadline }
+    }
+
+    $resHtml          = $MainHtml
+    $newResultAction  = $ResultAction
+    $newResultFile    = $null
+    $newActionSetTime = $null
+    $newShuttingDown  = $ShuttingDown
+    $newShutdownDeadline = $ShutdownDeadline
+
+    # --- /status ---
+    if ($url -eq "/status") {
+        $statusText = if ($ShuttingDown) {
+            "stopping"
+        } elseif ($ResultAction -ne $null) {
+            "changing"
+        } else {
+            "waiting"
+        }
+        Send-HttpResponse -Response $res -Content $statusText -ContentType "text/plain"
+        $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+        return @{ ShouldContinue = $true; ResultAction = $ResultAction; ResultFile = $null; ActionSetTime = $null; ShuttingDown = $ShuttingDown; ShutdownDeadline = $ShutdownDeadline }
+    }
+
+    # --- POST アクション ---
+    if ($req.HttpMethod -eq "POST") {
+        switch ($url) {
+            "/start"  { $newResultAction = "Start"; $newActionSetTime = Get-Date; $resHtml = $ProcessingHtml }
+            "/next"   { $newResultAction = "Next";  $newActionSetTime = Get-Date; $resHtml = $ProcessingHtml }
+            "/retry"  { $newResultAction = "Retry"; $newActionSetTime = Get-Date; $resHtml = $ProcessingHtml }
+            "/lobby"  { $newResultAction = "Lobby"; $newActionSetTime = Get-Date; $resHtml = $ProcessingHtml }
+            "/exit"   {
+                $newResultAction     = "Exit"
+                $newActionSetTime    = Get-Date
+                $newShuttingDown     = $true
+                $newShutdownDeadline = (Get-Date).AddSeconds(5)
+                $resHtml             = $ExitHtml
+            }
+            "/select" {
+                if ([System.Web.HttpUtility]::UrlDecode($body) -match "filename=(.*)") {
+                    $newResultAction = "Select"; $newResultFile = $matches[1]; $newActionSetTime = Get-Date
+                }
+                $resHtml = $ProcessingHtml
+            }
+        }
+    } elseif ($url -eq "/exit") {
+        $resHtml = $ExitHtml
+    }
+
+    # --- 状態変化中のGETにはprocessing/exit画面を返す（他端末操作時のチカチカ防止） ---
+    if ($req.HttpMethod -eq "GET" -and $url -ne "/status" -and $url -ne "/exit") {
+        if ($ShuttingDown) {
+            $resHtml = $ExitHtml
+        } elseif ($ResultAction -ne $null) {
+            $resHtml = $ProcessingHtml
+        }
+    }
+
+    Send-HttpResponse -Response $res -Content $resHtml
+    $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+
+    return @{
+        ShouldContinue   = $false
+        ResultAction     = $newResultAction
+        ResultFile       = $newResultFile
+        ActionSetTime    = $newActionSetTime
+        ShuttingDown     = $newShuttingDown
+        ShutdownDeadline = $newShutdownDeadline
+    }
 }
 
-# ------------------------------------------------------------
-# 4. 入力待機関数 (Lobby / Dialog)
-# ------------------------------------------------------------
+# --- ui-console.ps1 ---
 function Get-UserAction {
     param (
         [string]$Mode,
@@ -834,15 +794,10 @@ function Get-UserAction {
         [System.Net.HttpListener]$Listener
     )
 
-    # ページング用変数
-    $currentPage = 0
+    $currentPage  = 0
     $itemsPerPage = 9
-    $needsRedraw = $true
-
-    # ネットワーク情報のキャッシュ
     $cachedAdapters = Get-LocalActiveIPs
 
-    # 画面表示関数
     function Show-ConsolePage {
         Clear-Host
         $adapters = $cachedAdapters
@@ -864,13 +819,12 @@ function Get-UserAction {
         if ($Mode -eq "Lobby") {
             Write-Host " [Enter] Start" -ForegroundColor Green
             Write-Host " [1-9]   Select Slide by Number" -ForegroundColor Cyan
-            
-            # ページング情報の表示
-            $totalActiveFiles = @($ActiveFiles).Count
+
+            $totalActiveFiles   = @($ActiveFiles).Count
             $totalFinishedFiles = @($FinishedFiles).Count
             $totalFiles = $totalActiveFiles + $totalFinishedFiles
             $totalPages = [Math]::Ceiling($totalFiles / $itemsPerPage)
-            
+
             if ($totalPages -gt 1) {
                 Write-Host " [N]     Next Page  [P] Previous Page" -ForegroundColor Magenta
             }
@@ -878,22 +832,20 @@ function Get-UserAction {
             Write-Host " [Q]     Exit System" -ForegroundColor Red
             Write-Host "   * Note: To close a presentation, please click the 'X' button on the PowerPoint window." -ForegroundColor DarkGray
             Write-Host ""
-            
+
             if ($totalPages -gt 1) {
                 Write-Host " --- Available Slides (Page $($currentPage + 1)/$totalPages) ---" -ForegroundColor Gray
             } else {
                 Write-Host " --- Available Slides ---" -ForegroundColor Gray
             }
-            
-            # ページング計算
+
             $startIdx = $currentPage * $itemsPerPage
-            $endIdx = $startIdx + $itemsPerPage - 1
-            
-            # Pending スライド表示
-            $displayIndex = 1
-            $currentFileIndex = 0
-            $activeSectionShown = $false
-            
+            $endIdx   = $startIdx + $itemsPerPage - 1
+
+            $displayIndex        = 1
+            $currentFileIndex    = 0
+            $activeSectionShown  = $false
+
             if (@($ActiveFiles).Count -gt 0) {
                 foreach ($f in $ActiveFiles) {
                     if ($currentFileIndex -ge $startIdx -and $currentFileIndex -le $endIdx) {
@@ -907,8 +859,7 @@ function Get-UserAction {
                     $currentFileIndex++
                 }
             }
-            
-            # Completed スライド表示
+
             $finishedSectionShown = $false
             if (@($FinishedFiles).Count -gt 0) {
                 foreach ($f in $FinishedFiles) {
@@ -945,17 +896,15 @@ function Get-UserAction {
         Write-Host " ▶ Waiting for command... (Press a key to execute immediately)" -ForegroundColor Green
         Write-Host "" -NoNewline
     }
-    
-    # 初回表示
-        Show-ConsolePage
-    $head = Get-HtmlHeader -Title "Controller" -BgColor $(if($Mode -eq 'Lobby'){"#1a1a1a"}else{"#000000"})
-    
-    # Bodyコンテンツ
+
+    Show-ConsolePage
+    $head = Get-HtmlHeader -Title "Controller" -BgColor $(if ($Mode -eq 'Lobby') { "#1a1a1a" } else { "#000000" })
+
     $bodyContent = ""
     if ($Mode -eq 'Lobby') {
         $nextTxt = if ($ActiveFiles) { $ActiveFiles[0].Name } else { "None" }
-        $stBtn = if ($ActiveFiles) { "" } else { "disabled style='opacity:0.5;'" }
-        
+        $stBtn   = if ($ActiveFiles) { "" } else { "disabled style='opacity:0.5;'" }
+
         $listHtml = "<div class='list-container'><h3 style='color:#28a745;font-size:0.9rem;border-bottom:1px solid #555;'>Pending</h3>"
         if (!$ActiveFiles) { $listHtml += "<p>None</p>" }
         foreach ($f in $ActiveFiles) {
@@ -970,36 +919,29 @@ function Get-UserAction {
         $bodyContent = $script:HtmlTemplates.LobbyView -f $stBtn, $nextTxt, $listHtml
     } else {
         $nxtLbl = if ($NextFileName) { "Start Next Slide<br><span style='font-size:0.8rem;font-weight:normal'>$NextFileName</span>" } else { "No slides in queue" }
-        $nxtSt = if ($NextFileName) { "" } else { "disabled style='opacity:0.5;'" }
+        $nxtSt  = if ($NextFileName) { "" } else { "disabled style='opacity:0.5;'" }
 
         $bodyContent = $script:HtmlTemplates.DialogView -f $CurrentFileName, $nxtSt, $nxtLbl
     }
-    
-    # 完全なHTMLページを構築
-    $mainHtml = $head + $bodyContent + $script:HtmlTemplates.PollingScript + "</div></body></html>"
 
-    # --- 画面状態のHTML ---
+    $mainHtml       = $head + $bodyContent + $script:HtmlTemplates.PollingScript + "</div></body></html>"
     $processingHtml = $head + $script:HtmlTemplates.ProcessingView
-    
-    $exitHtml = $head + $script:HtmlTemplates.ExitView
+    $exitHtml       = $head + $script:HtmlTemplates.ExitView
 
-    $resultAction = $null
-    $resultFile = $null
-    $actionSetTime = $null  # アクション設定時刻を記録
-    
-    # シャットダウン制御用
-    $shuttingDown = $false
+    $resultAction    = $null
+    $resultFile      = $null
+    $actionSetTime   = $null
+    $shuttingDown    = $false
     $shutdownDeadline = $null
     $waitingExitConfirm = $false
 
-    # --- 溜まっているキー入力バッファをクリア（プレゼン中の誤操作防止） ---
+    # プレゼン中の誤操作防止：溜まっているキー入力バッファをクリア
     while ([Console]::KeyAvailable) { $null = [Console]::ReadKey($true) }
 
     while ($true) {
-        
+
         # --- Web確認 ---
         if ($script:ContextTask -and $script:ContextTask.AsyncWaitHandle.WaitOne(100)) {
-            # ネットワーク瞬断対策：ContextTask.Resultの読み取りを保護 (Req 2)
             try {
                 $context = $script:ContextTask.Result
             } catch {
@@ -1007,119 +949,48 @@ function Get-UserAction {
                 $script:ContextTask = Get-SafeContextAsync -Listener $Listener
                 continue
             }
-            $req = $context.Request
-            $res = $context.Response
-            $url = $req.Url.LocalPath.ToLower()
-            
-            # --- 認証ミドルウェア：Cookie確認（共通関数使用） ---
-            $isAuthenticated = Test-IsAuthenticated -Request $req
-            
-            # 認証が必要なパス（/authと/statusは除外）
-            if (-not $isAuthenticated -and $url -ne "/auth" -and $url -ne "/status") {
-                $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", ""
-                Send-HttpResponse -Response $res -Content $authHtml
-                $script:ContextTask = Get-SafeContextAsync -Listener $Listener
-                continue
-            }
-            
-            # POSTボディの一括読み込み
-            $body = $null
-            if ($req.HttpMethod -eq "POST" -and $req.HasEntityBody) {
-                $r = New-Object System.IO.StreamReader($req.InputStream, $req.ContentEncoding)
-                $body = $r.ReadToEnd(); $r.Close()
-            }
-            
-            # /auth POSTリクエスト処理（共通関数使用）
-            if ($url -eq "/auth" -and $req.HttpMethod -eq "POST") {
-                Invoke-AuthHandler -Request $req -Response $res -Body $body | Out-Null
-                $script:ContextTask = Get-SafeContextAsync -Listener $Listener
-                continue
-            }
-            
-            $resHtml = $mainHtml
-            
-            if ($url -eq "/status") {
-                # 状態を返す：stopping（終了中）/ changing（状態変更中）/ waiting（待機中）
-                $statusText = if ($shuttingDown) { 
-                    "stopping" 
-                } elseif ($resultAction -ne $null) { 
-                    "changing" 
-                } else { 
-                    "waiting" 
-                }
-                Send-HttpResponse -Response $res -Content $statusText -ContentType "text/plain"
-                
-                $script:ContextTask = Get-SafeContextAsync -Listener $Listener
-                continue
-            }
 
-            if ($req.HttpMethod -eq "POST") {
-                switch ($url) {
-                    "/start"  { $resultAction = "Start"; $actionSetTime = Get-Date; $resHtml = $processingHtml }
-                    "/next"   { $resultAction = "Next";  $actionSetTime = Get-Date; $resHtml = $processingHtml }
-                    "/retry"  { $resultAction = "Retry"; $actionSetTime = Get-Date; $resHtml = $processingHtml }
-                    "/lobby"  { $resultAction = "Lobby"; $actionSetTime = Get-Date; $resHtml = $processingHtml }
-                    "/exit"   { 
-                        $resultAction = "Exit"
-                        $actionSetTime = Get-Date
-                        $shuttingDown = $true
-                        $shutdownDeadline = (Get-Date).AddSeconds(5)
-                        $resHtml = $exitHtml 
-                    }
-                    "/select" {
-                        if ([System.Web.HttpUtility]::UrlDecode($body) -match "filename=(.*)") { 
-                            $resultAction = "Select"; $resultFile = $matches[1]; $actionSetTime = Get-Date
-                        }
-                        $resHtml = $processingHtml
-                    }
-                }
-            } elseif ($url -eq "/exit") {
-                $resHtml = $exitHtml
-            }
+            $webResult = Invoke-WebRequestProcessor `
+                -Context         $context `
+                -MainHtml        $mainHtml `
+                -ProcessingHtml  $processingHtml `
+                -ExitHtml        $exitHtml `
+                -Listener        $Listener `
+                -ShuttingDown    $shuttingDown `
+                -ResultAction    $resultAction `
+                -ShutdownDeadline $shutdownDeadline
 
-            # 状態変化中のGETリクエストにはprocessing画面を返す（他端末操作時のチカチカ防止）
-            if ($req.HttpMethod -eq "GET" -and $url -ne "/status" -and $url -ne "/exit") {
-                if ($shuttingDown) {
-                    $resHtml = $exitHtml
-                } elseif ($resultAction -ne $null) {
-                    $resHtml = $processingHtml
-                }
-            }
+            if ($webResult.ShouldContinue) { continue }
 
-            # 安全にレスポンスを返す
-            Send-HttpResponse -Response $res -Content $resHtml
-
-            $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+            $resultAction    = $webResult.ResultAction
+            if ($webResult.ResultFile    -ne $null) { $resultFile      = $webResult.ResultFile }
+            if ($webResult.ActionSetTime -ne $null) { $actionSetTime   = $webResult.ActionSetTime }
+            $shuttingDown    = $webResult.ShuttingDown
+            $shutdownDeadline = $webResult.ShutdownDeadline
         }
 
         # --- コンソール確認 ---
         if ((!$shuttingDown) -and ($resultAction -eq $null) -and [Console]::KeyAvailable) {
             $keyInfo = [Console]::ReadKey($true)
             $k = $keyInfo.Key.ToString().ToUpper()
-            
-            # 終了確認待ちの場合
+
             if ($waitingExitConfirm) {
                 if ($k -eq "Y") {
-                    $shuttingDown = $true
+                    $shuttingDown     = $true
                     $shutdownDeadline = (Get-Date).AddSeconds(5)
                     Write-Host ""
                     Write-Host " [System] Shutting down... (Notifying web clients / Will exit in 5 seconds)" -ForegroundColor Magenta
                 } else {
-                    # キャンセル
                     $waitingExitConfirm = $false
                     Show-ConsolePage
                 }
             } else {
-                # 通常コマンド処理
-                
-                # コンソールからの終了要求
                 if ($k -eq "Q" -or $k -eq "ESCAPE" -or ($k -eq "C" -and $keyInfo.Modifiers -band [ConsoleModifiers]::Control)) {
                     $waitingExitConfirm = $true
                     Write-Host ""
                     Write-Host " Are you sure you want to exit? [Y] Confirm / [N] Cancel : " -ForegroundColor Yellow -NoNewline
                 }
 
-                # ネットワーク情報の手動更新
                 if ($k -eq "U") {
                     Write-Host ""
                     Write-Host " [System] Updating network info..." -ForegroundColor DarkYellow
@@ -1129,9 +1000,9 @@ function Get-UserAction {
                 }
 
                 if ($Mode -eq "Lobby") {
-                    if ($k -eq "ENTER" -or $k -eq "S") { 
+                    if ($k -eq "ENTER" -or $k -eq "S") {
                         if ($ActiveFiles -and @($ActiveFiles).Count -gt 0) {
-                            $resultAction = "Start"; $actionSetTime = Get-Date 
+                            $resultAction = "Start"; $actionSetTime = Get-Date
                         } else {
                             Write-Host ""
                             Write-Host " [System] No slides in queue. Press [1-9] to select a completed slide." -ForegroundColor DarkYellow
@@ -1139,51 +1010,44 @@ function Get-UserAction {
                             Show-ConsolePage
                         }
                     }
-                    
-                    # ページング操作
-                    $totalActiveFiles = @($ActiveFiles).Count
+
+                    $totalActiveFiles   = @($ActiveFiles).Count
                     $totalFinishedFiles = @($FinishedFiles).Count
                     $totalFiles = $totalActiveFiles + $totalFinishedFiles
                     $totalPages = [Math]::Ceiling($totalFiles / $itemsPerPage)
-                    
+
                     if ($k -eq "N") {
-                        # 次のページ
                         if ($currentPage -lt ($totalPages - 1)) {
                             $currentPage++
                             Show-ConsolePage
                         }
-                    }
-                    elseif ($k -eq "P") {
-                        # 前のページ
+                    } elseif ($k -eq "P") {
                         if ($currentPage -gt 0) {
                             $currentPage--
                             Show-ConsolePage
                         }
                     }
-                    
-                    # 数字キーでスライド選択（ページオフセットを考慮）
+
                     if ($k -match "^D([0-9])$" -or $k -match "^NUMPAD([0-9])$") {
-                        # D1-D9 および NUMPAD1-NUMPAD9 形式のキー
                         $num = [int]$matches[1]
                         if ($num -ge 1 -and $num -le 9) {
                             $absoluteIndex = $currentPage * $itemsPerPage + ($num - 1)
-                            
-                            # 全ファイルリストを作成
+
                             $allFiles = @()
-                            if ($ActiveFiles) { $allFiles += $ActiveFiles }
+                            if ($ActiveFiles)  { $allFiles += $ActiveFiles }
                             if ($FinishedFiles) { $allFiles += $FinishedFiles }
-                            
+
                             if ($absoluteIndex -lt $allFiles.Count) {
-                                $resultAction = "Select"
-                                $resultFile = $allFiles[$absoluteIndex].Name
+                                $resultAction  = "Select"
+                                $resultFile    = $allFiles[$absoluteIndex].Name
                                 $actionSetTime = Get-Date
                             }
                         }
                     }
                 } else {
-                    if ($k -eq "ENTER" -or $k -eq "N") { 
+                    if ($k -eq "ENTER" -or $k -eq "N") {
                         if ($NextFileName) {
-                            $resultAction = "Next"; $actionSetTime = Get-Date 
+                            $resultAction = "Next"; $actionSetTime = Get-Date
                         } else {
                             Write-Host ""
                             Write-Host " [System] No slides in queue. Please press [L] to go Back to Lobby, or [R] to Retry." -ForegroundColor DarkYellow
@@ -1199,7 +1063,6 @@ function Get-UserAction {
 
         # --- 終了判定 ---
         if ($resultAction -ne $null -and $resultAction -ne "Exit") {
-            # Web側が状態変化を検知できるよう、800ms待機してからbreak
             if ($actionSetTime -and ((Get-Date) - $actionSetTime).TotalMilliseconds -gt 800) {
                 break
             }
@@ -1212,13 +1075,125 @@ function Get-UserAction {
         }
     }
 
-    # HttpListener はメインフロー内で一元管理するため、ここでは Stop/Close しない
-    
     return @{ Action = $resultAction; FileName = $resultFile }
 }
 
-# ============================================================================== 
-# 5. メインフロー
+# --- com-handler.ps1 ---
+function Watch-RunningPresentation {
+    param (
+        [object]$PptApp,
+        [object]$TargetFileItem,
+        [System.Net.HttpListener]$Listener
+    )
+
+    $head     = Get-HtmlHeader -Title "Now Playing" -BgColor "#000000"
+    $bodyHtml = $script:HtmlTemplates.NowPlayingView -f $TargetFileItem.Name
+    $fullHtml = $head + $bodyHtml
+
+    $status = "NormalEnd"
+
+    try {
+        $isFileOpen = $true
+        while ($isFileOpen) {
+
+            # 1. Webリクエスト確認
+            if ($script:ContextTask -and $script:ContextTask.AsyncWaitHandle.WaitOne(100)) {
+                try {
+                    $context = $script:ContextTask.Result
+                } catch {
+                    Write-Host " [Warning] Context read failed in Watch: $($_.Exception.Message)" -ForegroundColor Yellow
+                    $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+                    continue
+                }
+                $req  = $context.Request
+                $res  = $context.Response
+                $path = $req.Url.LocalPath.ToLower()
+
+                $isAuthenticated = Test-IsAuthenticated -Request $req
+
+                if (-not $isAuthenticated -and $path -ne "/status" -and $path -ne "/auth") {
+                    $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", ""
+                    Send-HttpResponse -Response $res -Content $authHtml
+                    $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+                    continue
+                }
+
+                if ($path -eq "/auth" -and $req.HttpMethod -eq "POST") {
+                    $authBody = $null
+                    if ($req.HasEntityBody) {
+                        $sr = New-Object System.IO.StreamReader($req.InputStream, $req.ContentEncoding)
+                        $authBody = $sr.ReadToEnd(); $sr.Close()
+                    }
+                    Invoke-AuthHandler -Request $req -Response $res -Body $authBody | Out-Null
+                    $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+                    continue
+                }
+
+                if ($path -eq "/status") {
+                    Send-HttpResponse -Response $res -Content "running" -ContentType "text/plain"
+                } elseif ($path -eq "/stop" -and $req.HttpMethod -eq "POST") {
+                    $status = "ManualStop"
+                    try {
+                        $res.StatusCode = 302
+                        $res.KeepAlive  = $false
+                        $res.AddHeader("Location", "/")
+                        $res.Close()
+                    } catch {}
+                    $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+                    break
+                } else {
+                    Send-HttpResponse -Response $res -Content $fullHtml
+                }
+
+                $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+            }
+
+            # 2. PowerPointの状態確認
+            $stillOpen = $false
+            try {
+                $null = $PptApp.Presentations.Count
+                foreach ($p in $PptApp.Presentations) {
+                    if ($p.FullName -eq $TargetFileItem.FullName) {
+                        $stillOpen = $true
+                        break
+                    }
+                }
+            } catch {
+                # HResult ベースの判定で OS 言語に依存しない堅牢なエラー分類
+                $hr = $_.Exception.HResult
+                if (-not $hr -and $_.Exception.InnerException) {
+                    $hr = $_.Exception.InnerException.HResult
+                }
+                # 0x80010001 (RPC_E_CALL_REJECTED) / 0x800A175D (PPT busy/enum error)
+                $transientHResults = @(
+                    [int]0x80010001,  # RPC_E_CALL_REJECTED
+                    [int]0x800A175D   # PowerPoint enumeration error
+                )
+                if ($hr -and ($transientHResults -contains $hr)) {
+                    $stillOpen = $true
+                    Write-Host " [Warning] COM transient error (HResult: 0x$($hr.ToString('X8')), presentation assumed still open)" -ForegroundColor Yellow
+                } else {
+                    $stillOpen = $false
+                    Write-Host " [Warning] COM fatal error (HResult: $(if($hr){'0x'+$hr.ToString('X8')}else{'N/A'}), presentation assumed closed): $($_.Exception.Message)" -ForegroundColor Yellow
+                }
+            }
+
+            if (-not $stillOpen) {
+                $status = "NormalEnd"
+                break
+            }
+        }
+    } finally {
+        # HttpListener はメインフロー内で一元管理するため、ここでは Stop/Close しない
+    }
+
+    return $status
+}
+
+# --- main.ps1 ---
+
+# ==============================================================================
+# メインフロー
 # ==============================================================================
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -1227,10 +1202,7 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
     exit
 }
 
-# コンソールの「閉じる」ボタンを無効化（誤操作防止）
 [ConsoleWindow]::DisableCloseButton()
-
-# Ctrl+Cをスクリプト終了ではなく通常のキー入力として処理
 [console]::TreatControlCAsInput = $true
 
 if (-not (Test-Path $TargetFolderPath)) { Write-Error "Target Folder Not Found"; exit }
@@ -1247,10 +1219,9 @@ try {
 }
 
 try {
-    $exitLoop = $false
+    $exitLoop      = $false
     $autoPlayTarget = $null
-    
-    # HttpListener を作成・Start（メインフロー内で一元管理）
+
     $listener = New-Object System.Net.HttpListener
     $listener.Prefixes.Add("http://+:$WebPort/")
     try {
@@ -1261,26 +1232,28 @@ try {
     }
 
     while (-not $exitLoop) {
-        
-        $activeFiles = Get-PptFiles -Path $TargetFolderPath
+
+        $activeFiles   = Get-PptFiles -Path $TargetFolderPath
         $finishedFiles = Get-PptFiles -Path $finishFolderPath
-        
+
         $targetFileItem = $null
 
         # --- A. 選択 ---
         if ($autoPlayTarget) {
-            $targetFileItem = $autoPlayTarget
-            $autoPlayTarget = $null
+            $targetFileItem  = $autoPlayTarget
+            $autoPlayTarget  = $null
         } else {
             $result = Get-UserAction -Mode "Lobby" -ActiveFiles $activeFiles -FinishedFiles $finishedFiles -Listener $listener
-            
+
             switch ($result.Action) {
-                "Exit" { $exitLoop = $true; break }
-                "Start" { if ($activeFiles) { $targetFileItem = $activeFiles[0] } }
+                "Exit"   { $exitLoop = $true; break }
+                "Start"  { if ($activeFiles) { $targetFileItem = $activeFiles[0] } }
                 "Select" {
                     $name = $result.FileName
-                    $targetFileItem = $activeFiles | Where-Object { $_.Name -eq $name } | Select-Object -First 1
-                    if (!$targetFileItem) { $targetFileItem = $finishedFiles | Where-Object { $_.Name -eq $name } | Select-Object -First 1 }
+                    $targetFileItem = $activeFiles   | Where-Object { $_.Name -eq $name } | Select-Object -First 1
+                    if (!$targetFileItem) {
+                        $targetFileItem = $finishedFiles | Where-Object { $_.Name -eq $name } | Select-Object -First 1
+                    }
                 }
             }
         }
@@ -1290,9 +1263,9 @@ try {
 
         # --- B. プレゼン実行 ---
         $presentation = $null
-        $status = "NormalEnd"
+        $status       = "NormalEnd"
 
-        # PowerPointプロセスの生存確認と自動復旧 (Req 5)
+        # PowerPointプロセスの生存確認と自動復旧
         try {
             $null = $pptApp.Name
             $null = $pptApp.Version
@@ -1316,15 +1289,12 @@ try {
         try {
             Write-Host " >> Opening: $($targetFileItem.Name)" -ForegroundColor Cyan
             $presentation = $pptApp.Presentations.Open($targetFileItem.FullName, $false, $false, $true)
-            
-            # PowerPointのファイル読み込み（COMオブジェクト）が完了し、プロセスが安定するのを待機
+
             Start-Sleep -Milliseconds 100
             $presentation.SlideShowSettings.Run() | Out-Null
-            
-            # 発表中の監視
+
             $status = Watch-RunningPresentation -PptApp $pptApp -TargetFileItem $targetFileItem -Listener $listener
-            
-            # 手動終了(ManualStop)の場合はここで閉じる
+
             if ($status -eq "ManualStop") {
                 Write-Host " >> Manually stopped." -ForegroundColor Yellow
                 try { $presentation.Close() } catch {}
@@ -1337,17 +1307,15 @@ try {
                     $targetFileItem = Move-Item -LiteralPath $targetFileItem.FullName -Destination $finishFolderPath -Force -PassThru
                 } catch { Write-Warning "Move failed: $_" }
             }
-            
+
             # --- D. 終了後の画面遷移 ---
             if ($status -eq "ManualStop") {
-                # 手動終了の場合：ダイアログを出さずにLobbyへ戻る
                 $autoPlayTarget = $null
-                continue 
+                continue
             }
 
-            # 正常終了の場合：ダイアログ(次へ/リトライ)を表示
             $activeFiles = Get-PptFiles -Path $TargetFolderPath
-            $nextName = if ($activeFiles) { $activeFiles[0].Name } else { "" }
+            $nextName    = if ($activeFiles) { $activeFiles[0].Name } else { "" }
 
             $postResult = Get-UserAction -Mode "Dialog" -CurrentFileName $targetFileItem.Name -NextFileName $nextName -Listener $listener
 
@@ -1359,25 +1327,21 @@ try {
             }
 
         } catch {
-            # Write-Error は $ErrorActionPreference='Stop' で自爆するため Write-Host に変更 (Req 4)
             Write-Host " [Error] $($_.Exception.Message)" -ForegroundColor Red
             if ($presentation) { try { $presentation.Close() } catch {} }
             Start-Sleep 2
         } finally {
-            # COMオブジェクトの確実なクリーンアップ
             if ($presentation) {
                 try { $presentation.Close() } catch {}
                 Release-ComObject -obj $presentation
                 $presentation = $null
             }
-            # ガベージコレクションを強制実行してCOM参照を完全に解放
             [System.GC]::Collect()
             [System.GC]::WaitForPendingFinalizers()
         }
     }
 
 } finally {
-    # HttpListener を停止・閉鎖
     if ($listener) {
         try {
             if ($listener.IsListening) { $listener.Stop() }
@@ -1385,28 +1349,25 @@ try {
             Start-Sleep -Milliseconds 200
         } catch {}
     }
-    
-    # コンソール画面をクリアして終了処理を明示
+
     Clear-Host
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Magenta
     Write-Host "  [System] Shutting down..." -ForegroundColor Magenta
     Write-Host "========================================" -ForegroundColor Magenta
     Write-Host ""
-    
-    # PowerPointアプリケーション全体の終了処理
-    if ($pptApp) { 
+
+    if ($pptApp) {
         try { $pptApp.Quit() } catch {}
         Release-ComObject -obj $pptApp
         $pptApp = $null
     }
-    
-    # ガベージコレクションを強制実行してPOWERPNT.EXEプロセスを確実に終了
+
     [System.GC]::Collect()
     [System.GC]::WaitForPendingFinalizers()
-    
+
     Write-Host "System terminated." -ForegroundColor Green
     Write-Host ""
-    
+
     [Environment]::Exit(0)
 }

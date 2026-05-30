@@ -17,7 +17,7 @@ setlocal
 REM -----------------------------------------------
 REM Settings
 REM -----------------------------------------------
-set "SCRIPT_NAME=Invoke-PPTController.ps1"
+set "SCRIPT_NAME=dist\presentation-controller.ps1"
 set "WEB_PORT=8090"
 set "FW_RULE_NAME=PresentController TCP %WEB_PORT% In"
 REM Reserve URL for all NICs (use http://<IP>:%WEB_PORT%/ to bind a fixed IP)
@@ -29,9 +29,9 @@ set "POWERSHELL=powershell.exe"
 REM -----------------------------------------------
 REM Ensure PowerShell script exists
 REM -----------------------------------------------
-if not exist "%SCRIPT_NAME%" (
-    echo [Error] File not found: %SCRIPT_NAME%
-    echo Please place the PowerShell script in the same folder as this batch file.
+if not exist "%~dp0%SCRIPT_NAME%" (
+    echo [Error] File not found: %~dp0%SCRIPT_NAME%
+    echo Please run build\build.ps1 first to generate the script.
     pause
     exit /b 1
 )
@@ -106,7 +106,7 @@ REM -----------------------------------------------
 echo Starting PowerShell script with administrator privileges...
 echo.
 
-"%POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0%SCRIPT_NAME%"
+"%POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0%SCRIPT_NAME%" -TargetFolderPath "%~dp0"
 
 REM -----------------------------------------------
 REM Cleanup: Remove URLACL and Firewall rule
