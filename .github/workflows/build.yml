@@ -7,12 +7,13 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
-# GitHub Releaseの作成・書き込み権限を明示的に付与
+# デフォルトの権限を最小限（読み取り専用）に設定
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build:
+  # 1. ビルドとパッケージングの検証ジョブ（PR時も実行されるが、権限はreadのみ）
+  build-check:
     runs-on: ubuntu-latest
 
     steps:
@@ -24,11 +25,9 @@ jobs:
         run: |
           ./build/build.ps1
 
-      # ユーザーが解凍したときに使いやすい配置になるよう、Actions内で綺麗にパッキングする
       - name: Package files into ZIP
         shell: pwsh
         run: |
-          # 一時フォルダを作成して成果物を集約
           New-Item -ItemType Directory -Path package -Force | Out-Null
           Copy-Item -Path Start-Presenter.bat -Destination package/
           Copy-Item -Path README.md -Destination package/
@@ -36,24 +35,33 @@ jobs:
           New-Item -ItemType Directory -Path package/dist -Force | Out-Null
           Copy-Item -Path dist/presentation-controller.ps1 -Destination package/dist/
 
-          # ルート直下にファイルが並ぶようにZIP圧縮
           Compress-Archive -Path package/* -DestinationPath ppt-orchestrator-ready-to-use.zip -Force
           Write-Host "✅ Created ppt-orchestrator-ready-to-use.zip" -ForegroundColor Green
 
-      # 開発確認用にGitHub Artifactsにも一時保存（90日間保持）
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ppt-orchestrator-raw-files
-          path: |
-            dist/presentation-controller.ps1
-            Start-Presenter.bat
-            README.md
+          name: ppt-orchestrator-package
+          path: ppt-orchestrator-ready-to-use.zip
           retention-days: 90
 
-      # mainブランチへのプッシュ（マージ）時のみ、GitHub ReleasesへZIPを自動公開する
+  # 2. リリース公開ジョブ（mainマージ時のみ実行され、書き込み権限を持つ）
+  release:
+    needs: build-check
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    # このジョブにのみ書き込み権限を付与
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download built ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: ppt-orchestrator-package
+
       - name: Create GitHub Release and Upload ZIP
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v7.4.${{ github.run_number }}
