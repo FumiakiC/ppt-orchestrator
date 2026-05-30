@@ -28,7 +28,7 @@ Running a multi-speaker event often comes with severe operational headaches. Thi
 
 ---
 
-## ✨ Key Features (v7.4)
+## ✨ Key Features (v1.0)
 
 - **📱 Mobile Web Remote:** Control presentations directly from your phone's browser.
 - **🔐 Secure PIN Authentication:** Protects your session with a randomly generated 6-digit One-Time PIN.

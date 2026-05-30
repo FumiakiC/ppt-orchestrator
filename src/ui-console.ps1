@@ -18,7 +18,7 @@
         $line = "━" * 70
         Write-Host $line -ForegroundColor DarkCyan
         Write-Host "  [ ppt-orchestrator ] " -ForegroundColor Cyan -NoNewline
-        Write-Host "v7.4 - Presentation Controller" -ForegroundColor DarkGray
+        Write-Host "v1.0 - Presentation Controller" -ForegroundColor DarkGray
         Write-Host $line -ForegroundColor DarkCyan
         Write-Host ""
         Write-Host "   🔐 PIN CODE: " -NoNewline -ForegroundColor Yellow
