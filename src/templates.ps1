@@ -190,6 +190,31 @@ $script:HtmlTemplates = @{
         @keyframes breathe {{ 0%,100% {{ opacity:1; }} 50% {{ opacity:.45; }} }}
         @keyframes goPulse {{ 0% {{ box-shadow:0 0 0 0 var(--go-glow); }} 70%,100% {{ box-shadow:0 0 0 13px transparent; }} }}
         @keyframes pop {{ 0% {{ transform:scale(.4); opacity:0; }} 60% {{ transform:scale(1.1); }} 100% {{ transform:scale(1); }} }}
+        /* ===== desktop: use the width, deck grid, panel framing ===== */
+        @media (min-width: 760px) {{
+            .container {{
+                max-width: 960px; width: 100%;
+                flex: 0 1 auto; margin: auto; height: auto; min-height: 0;
+                max-height: min(820px, calc(100dvh - 80px));
+                border: 1px solid var(--line); border-radius: 22px;
+                background: linear-gradient(180deg, rgba(23,27,32,.55), rgba(18,21,25,.30));
+                box-shadow: 0 30px 90px rgba(0,0,0,.5);
+            }}
+            .lobby-head {{ padding: 22px 26px 4px; }}
+            .sec-label {{ font-size: 1.25rem; }}
+            .list-scroll {{
+                display: grid; grid-template-columns: repeat(2, minmax(0,1fr));
+                gap: 12px 14px; align-content: start; padding: 14px 26px 10px;
+            }}
+            .list-scroll .sec, .list-scroll .empty {{ grid-column: 1 / -1; }}
+            .list-scroll .deck {{ margin: 0; height: 100%; }}
+            .footer {{ padding: 16px 26px; }}
+            .stage {{ min-height: min(460px, calc(100dvh - 120px)); }}
+        }}
+        @media (min-width: 1200px) {{
+            .container {{ max-width: 1180px; max-height: min(860px, calc(100dvh - 80px)); }}
+            .list-scroll {{ grid-template-columns: repeat(3, minmax(0,1fr)); }}
+        }}
     </style>
     <script>
         window.startPolling = function(expectedStatusArray, redirectUrl, opts) {{
