@@ -290,13 +290,37 @@ $script:HtmlTemplates = @{
     </div>
     <script>
         (function() {{
-            var s = 0, el = document.getElementById('elapsed');
-            setInterval(function() {{
-                s++;
+            var base = 0, baseAt = Date.now();
+            var el = document.getElementById('elapsed');
+            if (el) el.style.visibility = 'hidden';
+
+            function fmt(s) {{
                 var m = String(Math.floor(s / 60)).padStart(2, '0');
                 var x = String(s % 60).padStart(2, '0');
-                if (el) el.textContent = m + ':' + x;
-            }}, 1000);
+                return m + ':' + x;
+            }}
+
+            var synced = false;
+
+            function sync() {{
+                fetch('/elapsed?t=' + Date.now())
+                .then(function(r) {{ return r.text(); }})
+                .then(function(t) {{
+                    var n = parseInt(t, 10);
+                    if (!isNaN(n)) {{ base = n; baseAt = Date.now(); synced = true; }}
+                }})
+                .catch(function() {{}});
+            }}
+
+            setInterval(function() {{
+                if (el && synced) {{
+                    el.style.visibility = '';
+                    el.textContent = fmt(base + Math.floor((Date.now() - baseAt) / 1000));
+                }}
+            }}, 250);
+
+            sync();
+            setInterval(sync, 30000);
         }})();
         window.startPolling(['running'], '/', {{ defaultDelay: 1500 }});
     </script>
