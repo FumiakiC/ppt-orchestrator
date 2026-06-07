@@ -57,8 +57,8 @@
                 if ($path -eq "/status") {
                     Send-HttpResponse -Response $res -Content "running" -ContentType "text/plain"
                 } elseif ($path -eq "/elapsed") {
-                    $sec = [int]([Math]::Floor(((Get-Date) - $startTime).TotalSeconds))
-                    Send-HttpResponse -Response $res -Content "$sec" -ContentType "text/plain"
+                    $ms = [long][Math]::Floor(((Get-Date) - $startTime).TotalMilliseconds)
+                    Send-HttpResponse -Response $res -Content "$ms" -ContentType "text/plain"
                 } elseif ($path -eq "/stop" -and $req.HttpMethod -eq "POST") {
                     $status = "ManualStop"
                     try {

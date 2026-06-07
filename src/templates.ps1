@@ -136,7 +136,7 @@ $script:HtmlTemplates = @{
             font-size:12px; letter-spacing:2.5px; font-weight:600; color:var(--live);
             padding:7px 15px; border-radius:999px; border:1px solid rgba(255,77,79,.4); background:rgba(255,77,79,.08);
         }}
-        .onair i {{ width:9px; height:9px; border-radius:50%; background:var(--live); box-shadow:0 0 12px var(--live); animation:blink 1.3s steps(1) infinite; }}
+        .onair i {{ width:9px; height:9px; border-radius:50%; background:var(--live); box-shadow:0 0 12px var(--live); }}
         .now-name {{ font-size:1.45rem; font-weight:650; margin:24px 0 6px; line-height:1.35; max-width:92%; overflow-wrap:anywhere; }}
         .now-sub {{ font-family:var(--mono); font-size:12px; color:var(--txt-faint); }}
         .now-timer {{ font-family:var(--mono); font-size:52px; font-weight:300; letter-spacing:2px; margin:26px 0 4px; font-variant-numeric:tabular-nums; color:#cfd6dd; }}
@@ -186,7 +186,6 @@ $script:HtmlTemplates = @{
         /* animations */
         @keyframes spin {{ to {{ transform:rotate(360deg); }} }}
         @keyframes pulse {{ 0%,100% {{ transform:scale(1); opacity:1; }} 50% {{ transform:scale(1.08); opacity:.8; }} }}
-        @keyframes blink {{ 50% {{ opacity:.25; }} }}
         @keyframes breathe {{ 0%,100% {{ opacity:1; }} 50% {{ opacity:.45; }} }}
         @keyframes goPulse {{ 0% {{ box-shadow:0 0 0 0 var(--go-glow); }} 70%,100% {{ box-shadow:0 0 0 13px transparent; }} }}
         @keyframes pop {{ 0% {{ transform:scale(.4); opacity:0; }} 60% {{ transform:scale(1.1); }} 100% {{ transform:scale(1); }} }}
@@ -315,37 +314,44 @@ $script:HtmlTemplates = @{
     </div>
     <script>
         (function() {{
-            var base = 0, baseAt = Date.now();
-            var el = document.getElementById('elapsed');
-            if (el) el.style.visibility = 'hidden';
+            var el  = document.getElementById('elapsed');
+            var dot = document.querySelector('.onair i');
+            var baseMs = 0, baseAt = Date.now(), seeded = false, lastText = '';
 
-            function fmt(s) {{
+            function paint() {{
+                var total = baseMs + (Date.now() - baseAt);
+                if (total < 0) total = 0;
+                var s = Math.floor(total / 1000);
                 var m = String(Math.floor(s / 60)).padStart(2, '0');
                 var x = String(s % 60).padStart(2, '0');
-                return m + ':' + x;
+                var txt = m + ':' + x;
+                if (el && txt !== lastText) {{ el.textContent = txt; lastText = txt; }}
+                if (dot) {{ dot.style.opacity = (total % 1000) < 500 ? '1' : '0.25'; }}
+                requestAnimationFrame(paint);
             }}
 
-            var synced = false;
-
-            function sync() {{
+            function sync(force) {{
                 fetch('/elapsed?t=' + Date.now())
                 .then(function(r) {{ return r.text(); }})
                 .then(function(t) {{
-                    var n = parseInt(t, 10);
-                    if (!isNaN(n)) {{ base = n; baseAt = Date.now(); synced = true; }}
+                    var serverMs = parseInt(t, 10);
+                    if (isNaN(serverMs)) return;
+                    var predicted = baseMs + (Date.now() - baseAt);
+                    if (force || !seeded || Math.abs(serverMs - predicted) > 1000) {{
+                        baseMs = serverMs;
+                        baseAt = Date.now();
+                        seeded = true;
+                    }}
                 }})
                 .catch(function() {{}});
             }}
 
-            setInterval(function() {{
-                if (el && synced) {{
-                    el.style.visibility = '';
-                    el.textContent = fmt(base + Math.floor((Date.now() - baseAt) / 1000));
-                }}
-            }}, 250);
-
-            sync();
-            setInterval(sync, 30000);
+            sync(true);
+            requestAnimationFrame(paint);
+            document.addEventListener('visibilitychange', function() {{
+                if (document.visibilityState === 'visible') sync(true);
+            }});
+            setInterval(function() {{ sync(false); }}, 60000);
         }})();
         window.startPolling(['running'], '/', {{ defaultDelay: 1500 }});
     </script>
