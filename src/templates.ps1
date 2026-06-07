@@ -412,24 +412,36 @@ $script:HtmlTemplates = @{
         }}
         .lock-shield svg {{ width:28px; height:28px; }}
         h1 {{ font-size:1.35rem; font-weight:650; margin-bottom:8px; }}
-        .subtitle {{ color:var(--txt-dim); font-size:.88rem; margin-bottom:30px; line-height:1.5; }}
-        .pin-inputs {{ display:flex; justify-content:center; gap:9px; margin-bottom:24px; width:100%; }}
-        .pin-inputs.shake {{ animation:shake .5s; }}
+        .subtitle {{ color:var(--txt-dim); font-size:.88rem; margin-bottom:24px; line-height:1.5; }}
+        .pin-dots {{ display:flex; justify-content:center; gap:12px; margin-bottom:12px; }}
+        .pin-dots.shake {{ animation:shake .5s; }}
+        .pin-dots i {{
+            display:block; width:16px; height:16px; border-radius:50%;
+            border:2px solid var(--line); background:transparent;
+            transition:.18s var(--ease);
+        }}
+        .pin-dots i.full {{
+            background:var(--standby); border-color:var(--standby);
+            box-shadow:0 0 8px rgba(245,166,35,.55);
+        }}
         @keyframes shake {{
             0%,100% {{ transform:translateX(0); }}
             10%,30%,50%,70%,90% {{ transform:translateX(-7px); }}
             20%,40%,60%,80% {{ transform:translateX(7px); }}
         }}
-        .pin-box {{
-            flex:1 1 0; min-width:0; max-width:52px; height:62px;
-            font-family:var(--mono); font-size:1.7rem; text-align:center;
-            border:1.5px solid var(--line); border-radius:13px; background:var(--bg);
-            color:var(--txt); outline:none; transition:.2s var(--ease); caret-color:var(--standby);
-        }}
-        .pin-box:focus {{ border-color:var(--standby); box-shadow:0 0 0 3px rgba(245,166,35,.18); }}
-        .pin-box.error {{ border-color:var(--live); background:rgba(255,77,79,.08); }}
-        .error-msg {{ color:var(--live); font-size:.85rem; margin:-8px 0 18px; opacity:0; transition:opacity .3s; }}
+        .error-msg {{ color:var(--live); font-size:.85rem; margin:0 0 16px; opacity:0; transition:opacity .3s; }}
         .error-msg.show {{ opacity:1; }}
+        .keypad {{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:18px; }}
+        .key {{
+            padding:16px 0; font-family:var(--mono); font-size:1.3rem; font-weight:600;
+            border:1px solid var(--line); border-radius:13px;
+            background:linear-gradient(180deg,var(--panel-2),var(--panel));
+            color:var(--txt); cursor:pointer; transition:.12s var(--ease);
+        }}
+        .key:active {{ transform:scale(.93); background:var(--panel-2); }}
+        .key:focus-visible {{ outline:2px solid var(--standby); outline-offset:2px; }}
+        .key.ghost {{ color:var(--txt-dim); border-color:transparent; background:transparent; font-size:1.1rem; }}
+        .key.ghost:active {{ background:var(--panel-2); border-color:var(--line); }}
         .btn-submit {{
             width:100%; padding:16px; font-family:var(--sans); font-size:1rem; font-weight:700; letter-spacing:.4px;
             border:none; border-radius:14px; cursor:pointer; color:#1c1304;
@@ -451,96 +463,97 @@ $script:HtmlTemplates = @{
         <p class="subtitle">Check the host PC console for the 6-digit PIN.</p>
 
         <form method="post" action="/auth" id="authForm">
-            <div class="pin-inputs {1}" id="pinInputs">
-                <input type="text" class="pin-box {1}" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" id="pin1">
-                <input type="text" class="pin-box {1}" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" id="pin2">
-                <input type="text" class="pin-box {1}" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" id="pin3">
-                <input type="text" class="pin-box {1}" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" id="pin4">
-                <input type="text" class="pin-box {1}" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" id="pin5">
-                <input type="text" class="pin-box {1}" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" id="pin6">
+            <div class="pin-dots {1}" id="pinDots">
+                <i></i><i></i><i></i><i></i><i></i><i></i>
             </div>
             <div class="error-msg {1}" id="errorMsg">Invalid PIN. Please try again.</div>
             <input type="hidden" name="pin" id="pinValue">
+            <div class="keypad">
+                <button type="button" class="key" aria-label="1" onclick="pressKey('1')">1</button>
+                <button type="button" class="key" aria-label="2" onclick="pressKey('2')">2</button>
+                <button type="button" class="key" aria-label="3" onclick="pressKey('3')">3</button>
+                <button type="button" class="key" aria-label="4" onclick="pressKey('4')">4</button>
+                <button type="button" class="key" aria-label="5" onclick="pressKey('5')">5</button>
+                <button type="button" class="key" aria-label="6" onclick="pressKey('6')">6</button>
+                <button type="button" class="key" aria-label="7" onclick="pressKey('7')">7</button>
+                <button type="button" class="key" aria-label="8" onclick="pressKey('8')">8</button>
+                <button type="button" class="key" aria-label="9" onclick="pressKey('9')">9</button>
+                <div class="key ghost" aria-hidden="true"></div>
+                <button type="button" class="key" aria-label="0" onclick="pressKey('0')">0</button>
+                <button type="button" class="key ghost" aria-label="Delete" onclick="deleteKey()">&#9003;</button>
+            </div>
             <button type="submit" class="btn-submit" id="submitBtn" disabled>Unlock</button>
         </form>
     </div>
 
     <script>
-        var boxes = [document.getElementById('pin1'), document.getElementById('pin2'), document.getElementById('pin3'),
-                     document.getElementById('pin4'), document.getElementById('pin5'), document.getElementById('pin6')];
+        var pin = '';
+        var pinDots = document.getElementById('pinDots');
         var submitBtn = document.getElementById('submitBtn');
         var pinValue = document.getElementById('pinValue');
         var form = document.getElementById('authForm');
         var errorMsg = document.getElementById('errorMsg');
-        var pinInputsDiv = document.getElementById('pinInputs');
+        var dots = pinDots.querySelectorAll('i');
 
-        // Show error state if the server flagged it.
         var hasError = '{1}' === 'error';
         if (hasError) {{
             errorMsg.classList.add('show');
+            pinDots.classList.add('shake');
+            setTimeout(function() {{ pinDots.classList.remove('shake'); }}, 500);
         }}
 
-        boxes.forEach(function(box, index) {{
-            // Allow digits only.
-            box.addEventListener('input', function(e) {{
-                var val = e.target.value;
-                if (!/^[0-9]$/.test(val)) {{
-                    e.target.value = '';
-                    return;
-                }}
-
-                // Clear error state.
-                box.classList.remove('error');
-                errorMsg.classList.remove('show');
-                pinInputsDiv.classList.remove('shake');
-
-                // Move focus to the next box.
-                if (val && index < 5) {{
-                    boxes[index + 1].focus();
-                }}
-
-                // Enable submit once all boxes are filled.
-                checkComplete();
-            }});
-
-            // Backspace moves focus to the previous box.
-            box.addEventListener('keydown', function(e) {{
-                if (e.key === 'Backspace' && !e.target.value && index > 0) {{
-                    boxes[index - 1].focus();
-                }}
-            }});
-
-            // Handle pasted PIN codes.
-            box.addEventListener('paste', function(e) {{
-                e.preventDefault();
-                var pasteData = e.clipboardData.getData('text').replace(/[^0-9]/g, '').substring(0, 6);
-                for (var j = 0; j < boxes.length; j++) {{
-                    boxes[j].value = '';
-                }}
-                for (var i = 0; i < pasteData.length && i < 6; i++) {{
-                    boxes[i].value = pasteData[i];
-                }}
-                if (pasteData.length < 6) {{
-                    boxes[pasteData.length].focus();
+        function updateDots() {{
+            for (var i = 0; i < dots.length; i++) {{
+                if (i < pin.length) {{
+                    dots[i].classList.add('full');
                 }} else {{
-                    boxes[5].focus();
+                    dots[i].classList.remove('full');
                 }}
-                checkComplete();
-            }});
-        }});
-
-        function checkComplete() {{
-            var complete = boxes.every(function(b) {{ return b.value.length === 1; }});
-            submitBtn.disabled = !complete;
+            }}
+            submitBtn.disabled = pin.length < 6;
         }}
 
-        // Join the 6 digits on submit.
-        form.addEventListener('submit', function() {{
-            pinValue.value = boxes.map(function(b) {{ return b.value; }}).join('');
+        function pressKey(digit) {{
+            if (pin.length >= 6) return;
+            pin += digit;
+            updateDots();
+            if (pin.length === 6) {{
+                pinValue.value = pin;
+                form.submit();
+            }}
+        }}
+
+        function deleteKey() {{
+            if (pin.length === 0) return;
+            pin = pin.slice(0, -1);
+            updateDots();
+        }}
+
+        document.addEventListener('keydown', function(e) {{
+            if (e.key >= '0' && e.key <= '9') {{
+                pressKey(e.key);
+            }} else if (e.key === 'Backspace') {{
+                deleteKey();
+            }} else if (e.key === 'Enter' && pin.length === 6) {{
+                pinValue.value = pin;
+                form.submit();
+            }}
         }});
 
-        // Focus the first box.
-        boxes[0].focus();
+        document.addEventListener('paste', function(e) {{
+            e.preventDefault();
+            var pasted = (e.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '').substring(0, 6);
+            pin = pasted;
+            updateDots();
+            if (pin.length === 6) {{
+                pinValue.value = pin;
+                form.submit();
+            }}
+        }});
+
+        form.addEventListener('submit', function() {{
+            pinValue.value = pin;
+        }});
     </script>
 </body>
 </html>
