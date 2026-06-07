@@ -55,17 +55,39 @@ jobs:
     permissions:
       contents: write
 
+    env:
+      # メジャー.マイナー。新しいマイナーを切るときはここだけ変更（patch は自動で 0 始まり）
+      MAJOR_MINOR: "1.1"
+
     steps:
       - name: Download built ZIP
         uses: actions/download-artifact@v4
         with:
           name: ppt-orchestrator-package
 
+      - name: Determine next version (patch resets per minor)
+        id: ver
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mm_re=$(printf '%s' "$MAJOR_MINOR" | sed 's/\./\\./g')
+          existing=$(gh api "repos/${{ github.repository }}/tags" --paginate --jq '.[].name' \
+            | grep -E "^v${mm_re}\.[0-9]+$" || true)
+          if [ -z "$existing" ]; then
+            patch=0
+          else
+            max=$(printf '%s\n' "$existing" | sed -E "s/^v${mm_re}\.//" | sort -n | tail -1)
+            patch=$((max + 1))
+          fi
+          version="v${MAJOR_MINOR}.${patch}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Next version: $version"
+
       - name: Create GitHub Release and Upload ZIP
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: Release v1.0.${{ github.run_number }}
+          tag_name: ${{ steps.ver.outputs.version }}
+          name: Release ${{ steps.ver.outputs.version }}
           body: |
             ## 🎭 PPT-Orchestrator 最新自動ビルドパッケージ
             コミット `${{ github.sha }}` から自動生成された製品版パッケージです。
