@@ -119,16 +119,20 @@
         $nextTxt = if ($ActiveFiles) { [System.Web.HttpUtility]::HtmlEncode($ActiveFiles[0].Name) } else { "None" }
         $stBtn   = if ($ActiveFiles) { "" } else { "disabled style='opacity:0.5;'" }
 
-        $listHtml = "<div class='list-container'><h3 style='color:#28a745;font-size:0.9rem;border-bottom:1px solid #555;'>Pending</h3>"
-        if (!$ActiveFiles) { $listHtml += "<p>None</p>" }
+        $listHtml = "<div class='list-scroll'>"
+        $listHtml += "<div class='sec'><span class='tag tag-standby'>STANDBY</span> Pending</div>"
+        if (!$ActiveFiles) { $listHtml += "<div class='empty'>No decks queued.</div>" }
+        $idx = 0
         foreach ($f in $ActiveFiles) {
+            $idx++
             $fname = [System.Web.HttpUtility]::HtmlEncode($f.Name)
-            $listHtml += "<form method='post' action='/select' style='margin:0;'><input type='hidden' name='filename' value='$fname'><button class='btn btn-file'>$fname</button></form>"
+            $listHtml += "<form method='post' action='/select' class='deck-form'><input type='hidden' name='filename' value='$fname'><button type='submit' class='deck'><span class='deck-badge'>$idx</span><span class='deck-name'>$fname</span><span class='deck-cue'>&#9654;</span></button></form>"
         }
-        $listHtml += "<h3 style='color:#6c757d;font-size:0.9rem;border-bottom:1px solid #555;margin-top:20px;'>Completed</h3>"
+        $listHtml += "<div class='sec'><span class='tag tag-done'>DONE</span> Completed</div>"
+        if (!$FinishedFiles) { $listHtml += "<div class='empty'>None yet.</div>" }
         foreach ($f in $FinishedFiles) {
             $fname = [System.Web.HttpUtility]::HtmlEncode($f.Name)
-            $listHtml += "<form method='post' action='/select' style='margin:0;'><input type='hidden' name='filename' value='$fname'><button class='btn btn-file btn-finished'>$fname</button></form>"
+            $listHtml += "<form method='post' action='/select' class='deck-form'><input type='hidden' name='filename' value='$fname'><button type='submit' class='deck finished'><span class='deck-badge'>&#10003;</span><span class='deck-name'>$fname</span></button></form>"
         }
         $listHtml += "</div>"
 

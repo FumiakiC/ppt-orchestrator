@@ -13,6 +13,7 @@
 
     try {
         $isFileOpen = $true
+        $startTime = [DateTime]::UtcNow
         while ($isFileOpen) {
 
             # 1. Webリクエスト確認
@@ -55,6 +56,9 @@
 
                 if ($path -eq "/status") {
                     Send-HttpResponse -Response $res -Content "running" -ContentType "text/plain"
+                } elseif ($path -eq "/elapsed") {
+                    $ms = [long][Math]::Floor(([DateTime]::UtcNow - $startTime).TotalMilliseconds)
+                    Send-HttpResponse -Response $res -Content "$ms" -ContentType "text/plain"
                 } elseif ($path -eq "/stop" -and $req.HttpMethod -eq "POST") {
                     $status = "ManualStop"
                     try {
