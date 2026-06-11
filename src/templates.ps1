@@ -316,10 +316,10 @@ $script:HtmlTemplates = @{
         (function() {{
             var el  = document.getElementById('elapsed');
             var dot = document.querySelector('.onair i');
-            var baseMs = 0, baseAt = Date.now(), seeded = false, lastText = '';
+            var baseMs = 0, baseAt = performance.now(), seeded = false, lastText = '';
 
             function paint() {{
-                var total = baseMs + (Date.now() - baseAt);
+                var total = baseMs + (performance.now() - baseAt);
                 if (total < 0) total = 0;
                 var s = Math.floor(total / 1000);
                 var m = String(Math.floor(s / 60)).padStart(2, '0');
@@ -336,10 +336,10 @@ $script:HtmlTemplates = @{
                 .then(function(t) {{
                     var serverMs = parseInt(t, 10);
                     if (isNaN(serverMs)) return;
-                    var predicted = baseMs + (Date.now() - baseAt);
+                    var predicted = baseMs + (performance.now() - baseAt);
                     if (force || !seeded || Math.abs(serverMs - predicted) > 1000) {{
                         baseMs = serverMs;
-                        baseAt = Date.now();
+                        baseAt = performance.now();
                         seeded = true;
                     }}
                 }})
