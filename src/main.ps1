@@ -27,7 +27,7 @@ if (-not (Test-Path $finishFolderPath)) { New-Item -Path $finishFolderPath -Item
 Write-Host "Starting PowerPoint..." -ForegroundColor Cyan
 
 # Snapshot pre-existing PowerPoint PIDs so we never bind/kill an operator's own instance.
-$preExistingPptPids = @((Get-Process -Name POWERPNT -ErrorAction SilentlyContinue).Id)
+$preExistingPptPids = @(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
 
 $pptApp  = $null
 $lastErr = $null
@@ -65,7 +65,7 @@ try {
     $pptPid = 0
     try { $pptPid = [JobGuard]::GetProcessIdFromHwnd([IntPtr]$pptApp.HWND) } catch {}
     if ($pptPid -le 0) {
-        $newPids = @((Get-Process -Name POWERPNT -ErrorAction SilentlyContinue).Id) |
+        $newPids = @(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id) |
                    Where-Object { $preExistingPptPids -notcontains $_ }
         if (@($newPids).Count -eq 1) { $pptPid = $newPids[0] }
     }
