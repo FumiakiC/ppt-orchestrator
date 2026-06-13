@@ -179,6 +179,37 @@ function New-SecurePin {
     } finally { $rng.Dispose() }
 }
 
+function Protect-StateAcl {
+    param([Parameter(Mandatory)][string]$Path)
+    # Harden ACL to Administrators (S-1-5-32-544) + SYSTEM (S-1-5-18), inheritance broken.
+    # Default ProgramData\ppt-orchestrator -> harden the folder; custom path -> harden the file only.
+    try {
+        $dir = Split-Path -Parent $Path
+        $isDefaultDir = ($dir -eq (Join-Path $env:ProgramData 'ppt-orchestrator'))
+        if ($isDefaultDir) {
+            $acl = New-Object System.Security.AccessControl.DirectorySecurity
+            $acl.SetAccessRuleProtection($true, $false)
+            foreach ($sidStr in @('S-1-5-32-544','S-1-5-18')) {
+                $sid  = New-Object System.Security.Principal.SecurityIdentifier($sidStr)
+                $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow')
+                $acl.AddAccessRule($rule)
+            }
+            Set-Acl -LiteralPath $dir -AclObject $acl
+        } elseif (Test-Path -LiteralPath $Path) {
+            $fileAcl = New-Object System.Security.AccessControl.FileSecurity
+            $fileAcl.SetAccessRuleProtection($true, $false)
+            foreach ($sidStr in @('S-1-5-32-544','S-1-5-18')) {
+                $sid  = New-Object System.Security.Principal.SecurityIdentifier($sidStr)
+                $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid,'FullControl','Allow')
+                $fileAcl.AddAccessRule($rule)
+            }
+            Set-Acl -LiteralPath $Path -AclObject $fileAcl
+        }
+    } catch {
+        Write-Host " [Warning] Could not (re)harden state ACL: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
 $today     = (Get-Date).ToString('yyyy-MM-dd')
 $loadedPin = $null
 $loadedTok = $null
@@ -197,6 +228,8 @@ try {
 if ($loadedPin -and $loadedTok) {
     $script:AuthPin      = $loadedPin
     $script:SessionToken = $loadedTok
+    # Re-apply/repair ACL in case it was created or later modified with weak permissions.
+    Protect-StateAcl -Path $StatePath
 } else {
     $script:AuthPin      = New-SecurePin
     $script:SessionToken = [guid]::NewGuid().ToString('N')
@@ -204,23 +237,9 @@ if ($loadedPin -and $loadedTok) {
         $dir = Split-Path -Parent $StatePath
         if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
 
-        # Only harden the parent directory if it is the default ProgramData\ppt-orchestrator folder.
-        # Hardening an arbitrary user-specified directory (e.g. Documents) could corrupt its permissions.
         $isDefaultDir = ($dir -eq (Join-Path $env:ProgramData 'ppt-orchestrator'))
         if (-not $isDefaultDir) {
             Write-Host " [Warning] Custom -StatePath in use; hardening the state FILE only, not the parent folder. Use an admin-only location." -ForegroundColor Yellow
-        }
-        if ($isDefaultDir) {
-            try {
-                $acl = New-Object System.Security.AccessControl.DirectorySecurity
-                $acl.SetAccessRuleProtection($true, $false)
-                foreach ($sidStr in @('S-1-5-32-544','S-1-5-18')) {
-                    $sid  = New-Object System.Security.Principal.SecurityIdentifier($sidStr)
-                    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow')
-                    $acl.AddAccessRule($rule)
-                }
-                Set-Acl -LiteralPath $dir -AclObject $acl
-            } catch { Write-Host " [Warning] Could not harden state-folder ACL: $($_.Exception.Message)" -ForegroundColor Yellow }
         }
 
         $payload = [ordered]@{ Date = $today; Pin = $script:AuthPin; Token = $script:SessionToken } | ConvertTo-Json
@@ -228,20 +247,7 @@ if ($loadedPin -and $loadedTok) {
         # Delete any pre-existing file so the recreated file inherits the secure ACL instead of preserving a weak one.
         if (Test-Path -LiteralPath $StatePath) { Remove-Item -LiteralPath $StatePath -Force -ErrorAction SilentlyContinue }
         Set-Content -LiteralPath $StatePath -Value $payload -Encoding UTF8 -ErrorAction Stop
-
-        # If the parent folder was NOT hardened (custom path), harden the file itself.
-        if (-not $isDefaultDir) {
-            try {
-                $fileAcl = New-Object System.Security.AccessControl.FileSecurity
-                $fileAcl.SetAccessRuleProtection($true, $false)
-                foreach ($sidStr in @('S-1-5-32-544','S-1-5-18')) {
-                    $sid  = New-Object System.Security.Principal.SecurityIdentifier($sidStr)
-                    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid,'FullControl','Allow')
-                    $fileAcl.AddAccessRule($rule)
-                }
-                Set-Acl -LiteralPath $StatePath -AclObject $fileAcl
-            } catch { Write-Host " [Warning] Could not harden state-file ACL: $($_.Exception.Message)" -ForegroundColor Yellow }
-        }
+        Protect-StateAcl -Path $StatePath
     } catch {
         Write-Host " [Warning] Could not persist session state (using in-memory values for this run): $($_.Exception.Message)" -ForegroundColor Yellow
     }
