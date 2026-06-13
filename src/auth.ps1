@@ -12,8 +12,13 @@ function Invoke-AuthHandler {
         [System.Net.HttpListenerResponse]$Response,
         [string]$Body
     )
-    $currentTime = Get-Date
-    if ($currentTime -lt $script:LastAuthFailedTime.AddSeconds(1)) {
+    $ip = if ($Request.RemoteEndPoint) { $Request.RemoteEndPoint.Address.ToString() } else { "unknown" }
+
+    foreach ($k in @($script:AuthFailedTracker.Keys)) {
+        if (((Get-Date) - $script:AuthFailedTracker[$k]).TotalSeconds -gt 30) { $script:AuthFailedTracker.Remove($k) }
+    }
+
+    if ($script:AuthFailedTracker.ContainsKey($ip) -and (Get-Date) -lt $script:AuthFailedTracker[$ip].AddSeconds(1)) {
         $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", "error"
         Send-HttpResponse -Response $Response -Content $authHtml
         return $false
@@ -22,6 +27,7 @@ function Invoke-AuthHandler {
         if ([System.Web.HttpUtility]::UrlDecode($Body) -match "pin=([0-9]{6})") {
             $submittedPin = $matches[1]
             if ($submittedPin -eq $script:AuthPin.ToString()) {
+                $script:AuthFailedTracker.Remove($ip)
                 $Response.Headers.Add("Set-Cookie", "SessionToken=$script:SessionToken; HttpOnly; Path=/; SameSite=Strict")
                 $Response.StatusCode = 302
                 $Response.Headers.Add("Location", "/")
@@ -30,7 +36,7 @@ function Invoke-AuthHandler {
             }
         }
     }
-    $script:LastAuthFailedTime = Get-Date
+    $script:AuthFailedTracker[$ip] = (Get-Date)
     $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", "error"
     Send-HttpResponse -Response $Response -Content $authHtml
     return $false

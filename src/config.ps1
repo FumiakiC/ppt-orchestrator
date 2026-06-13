@@ -217,5 +217,5 @@ if ($loadedPin -and $loadedTok) {
         Write-Host " [Warning] Could not persist session state (using in-memory values for this run): $($_.Exception.Message)" -ForegroundColor Yellow
     }
 }
-$script:LastAuthFailedTime  = [DateTime]::MinValue
+$script:AuthFailedTracker   = @{}
 $script:ContextTask         = $null
