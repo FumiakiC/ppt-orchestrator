@@ -130,3 +130,21 @@ If the Wi-Fi completely fails and you lose access to the web remote, the host PC
 **Q: Does it support clickers / presentation remotes?**
 
 > Yes! The speaker can use a standard USB clicker to advance their slides while they are speaking. `ppt-orchestrator` simply manages the "switching" between files behind the scenes.
+
+---
+
+## ⚠️ Security Best Practices (Operational Guidelines)
+
+This tool is designed for ease of deployment and runs over **HTTP (not HTTPS)**. To reduce real-world exposure without requiring a TLS setup, please follow the guidelines below.
+
+### 🔓 Risk: Network Eavesdropping (Unencrypted HTTP Traffic)
+
+Because no TLS encryption is used, the PIN code and session tokens are transmitted in plain text. On an open venue Wi-Fi network (e.g., a public conference hall), anyone on the same network could potentially intercept them.
+
+**Mitigation:** Always operate this tool on a **dedicated, password-protected local network** — for example, a mobile Wi-Fi router or personal hotspot accessible only to event staff. Never run it over a public or shared venue Wi-Fi.
+
+### 🔑 Risk: Privilege Escalation via Script Tampering
+
+`Start-Presenter.bat` requests Administrator privileges (UAC) at launch. If the script files reside in a location where unprivileged users have write access (e.g., a shared network drive or `C:\Users\Public`), a malicious actor could replace them before execution — causing arbitrary code to run with Administrator rights.
+
+**Mitigation:** Extract and run the tool only from a location accessible **exclusively to the administrator**, such as the Desktop or Documents folder of the admin account. Never place the files in a world-writable shared directory.

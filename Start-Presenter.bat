@@ -4,7 +4,7 @@ cd /d %~dp0
 REM ===============================================
 REM Interactive presentation web remote: prep + launcher
 REM  - URLACL registration (http.sys)
-REM  - Windows Defender Firewall <WEB_PORT>/TCP allow (includes other subnets)
+REM  - Windows Defender Firewall <WEB_PORT>/TCP allow (source range: ALLOWED_REMOTE, default Any)
 REM  - Admin elevation
 REM  - Launch PowerShell script
 REM ===============================================
@@ -22,6 +22,14 @@ set "WEB_PORT=8090"
 set "FW_RULE_NAME=PresentController TCP %WEB_PORT% In"
 REM Reserve URL for all NICs (use http://<IP>:%WEB_PORT%/ to bind a fixed IP)
 set "URLACL_URL=http://+:%WEB_PORT%/"
+REM Firewall allowed source range(s) for inbound %WEB_PORT%/TCP. Default "Any" (no change in behavior).
+REM   Comma-separated. Examples:
+REM     Single operator PC (most secure):   172.20.3.20/32
+REM     Operator subnet(s):                 172.20.2.0/24,172.20.3.0/24
+REM     Single-segment venue Wi-Fi:         LocalSubnet
+REM     Unrestricted (current default):     Any
+REM   (Can also be overridden via environment variable without editing this file.)
+if not defined ALLOWED_REMOTE set "ALLOWED_REMOTE=Any"
 
 REM PowerShell command
 set "POWERSHELL=powershell.exe"
@@ -74,7 +82,7 @@ if %errorlevel% neq 0 (
 
 REM -----------------------------------------------
 REM Windows Defender Firewall: allow inbound <WEB_PORT>/TCP
-REM  - RemoteAddress=Any, Profile=Any to allow other subnets
+REM  - RemoteAddress=%ALLOWED_REMOTE% (set above), Profile=Any
 REM  - Remove same-name rule before adding
 REM -----------------------------------------------
 echo [FW] Removing existing rule (same name): %FW_RULE_NAME%
@@ -83,7 +91,7 @@ echo [FW] Removing existing rule (same name): %FW_RULE_NAME%
 
 echo [FW] Adding new rule: %FW_RULE_NAME%
 "%POWERSHELL%" -NoProfile -Command ^
-  "New-NetFirewallRule -DisplayName '%FW_RULE_NAME%' -Direction Inbound -Action Allow -Protocol TCP -LocalPort %WEB_PORT% -RemoteAddress Any -Profile Any" >nul 2>&1
+    "New-NetFirewallRule -DisplayName '%FW_RULE_NAME%' -Direction Inbound -Action Allow -Protocol TCP -LocalPort %WEB_PORT% -RemoteAddress ('%ALLOWED_REMOTE%' -split ',' | ForEach-Object { $_.Trim() }) -Profile Any" >nul 2>&1
 
 if %errorlevel% neq 0 (
     echo [Warning] Error creating Firewall rule. It may be restricted by GPO or other policies.

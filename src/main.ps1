@@ -17,20 +17,68 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
 }
 
 [ConsoleWindow]::DisableCloseButton()
+try { [ConsoleWindow]::DisableQuickEdit() } catch {}
 [console]::TreatControlCAsInput = $true
+
+# Stabilize console dimensions so header info (PIN / URL) is not pushed off-screen.
+# Buffer height is kept large so content never overflows the buffer (with quick-edit off, scrolling is unavailable).
+try {
+    $rawUI = $Host.UI.RawUI
+    $desiredWidth  = [Math]::Max($rawUI.BufferSize.Width, 100)
+    $desiredWinH   = 40
+    $maxWinH       = $rawUI.MaxPhysicalWindowSize.Height
+    if ($maxWinH -gt 0 -and $desiredWinH -gt $maxWinH) { $desiredWinH = $maxWinH }
+
+    # Buffer must be >= window. Set buffer first (width+height), then window.
+    $rawUI.BufferSize = New-Object System.Management.Automation.Host.Size($desiredWidth, 1000)
+    $newWin = New-Object System.Management.Automation.Host.Size($desiredWidth, $desiredWinH)
+    $rawUI.WindowSize = $newWin
+} catch {
+    # Non-fatal: some hosts (e.g. redirected output) don't support resizing.
+}
 
 if (-not (Test-Path $TargetFolderPath)) { Write-Error "Target Folder Not Found"; exit }
 $finishFolderPath = Join-Path $TargetFolderPath $FinishFolderName
 if (-not (Test-Path $finishFolderPath)) { New-Item -Path $finishFolderPath -ItemType Directory | Out-Null }
 
 Write-Host "Starting PowerPoint..." -ForegroundColor Cyan
-try {
-    $pptApp = New-Object -ComObject PowerPoint.Application
-    $pptApp.Visible = [Microsoft.Office.Core.MsoTriState]::msoTrue
-} catch {
-    Write-Error "Failed to start PowerPoint"
+
+# Snapshot pre-existing PowerPoint PIDs so we never bind/kill an operator's own instance.
+$preExistingPptPids = @(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
+
+$pptApp  = $null
+$lastErr = $null
+for ($i = 1; $i -le 3; $i++) {
+    try { $pptApp = New-Object -ComObject PowerPoint.Application; break }
+    catch { $lastErr = $_; if ($i -lt 3) { Start-Sleep -Milliseconds 1500 } }
+}
+
+# If still not up, optionally clear stale instances (opt-in) and retry once.
+if (-not $pptApp) {
+    $stale = @(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue)
+    if ($stale.Count -gt 0 -and $KillStalePowerPoint) {
+        Write-Warning "PowerPoint not responding. Clearing stale POWERPNT process(es) and retrying..."
+        $stale | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 1000
+        try { $pptApp = New-Object -ComObject PowerPoint.Application } catch { $lastErr = $_ }
+    }
+}
+
+if (-not $pptApp) {
+    $msg = if ($lastErr) { $lastErr.Exception.Message } else { "unknown error" }
+    $hr  = if ($lastErr) { ("0x{0:X8}" -f $lastErr.Exception.HResult) } else { "n/a" }
+    if ((Get-Process -Name POWERPNT -ErrorAction SilentlyContinue) -and -not $KillStalePowerPoint) {
+        Write-Error "Failed to start PowerPoint: $msg (HRESULT $hr). A PowerPoint process is already running; re-run with -KillStalePowerPoint to clear it, or close it manually."
+    } else {
+        Write-Error "Failed to start PowerPoint: $msg (HRESULT $hr)"
+    }
     exit
 }
+
+$pptApp.Visible = [Microsoft.Office.Core.MsoTriState]::msoTrue
+
+# Bind only an instance WE spawned to a kill-on-close job (never the operator's own).
+Set-PptKillOnClose -PptApp $pptApp -PreExistingPids $preExistingPptPids
 
 try {
     $exitLoop      = $false
@@ -89,10 +137,12 @@ try {
             $pptApp = $null
             [System.GC]::Collect()
             [System.GC]::WaitForPendingFinalizers()
+            $recoveryPreexisting = @(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
             try {
                 $pptApp = New-Object -ComObject PowerPoint.Application
                 $pptApp.Visible = [Microsoft.Office.Core.MsoTriState]::msoTrue
                 Write-Host " [System] PowerPoint COM object recovered successfully." -ForegroundColor Green
+                Set-PptKillOnClose -PptApp $pptApp -PreExistingPids $recoveryPreexisting
             } catch {
                 Write-Host " [Error] Failed to recover PowerPoint: $($_.Exception.Message)" -ForegroundColor Red
                 Start-Sleep 3

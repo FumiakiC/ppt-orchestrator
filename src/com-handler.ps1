@@ -117,3 +117,27 @@
 
     return $status
 }
+
+function Set-PptKillOnClose {
+    param(
+        [object]$PptApp,
+        [int[]]$PreExistingPids = @()
+    )
+    # Bind only an instance WE spawned to a kill-on-close job (never the operator's own).
+    try {
+        $pptPid = 0
+        try { $pptPid = [JobGuard]::GetProcessIdFromHwnd([IntPtr]$PptApp.HWND) } catch {}
+        if ($pptPid -le 0) {
+            $candidatePids = @(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id) |
+                             Where-Object { $PreExistingPids -notcontains $_ }
+            if (@($candidatePids).Count -eq 1) { $pptPid = $candidatePids[0] }
+        }
+        if ($pptPid -gt 0 -and ($PreExistingPids -notcontains $pptPid)) {
+            [void][JobGuard]::Guard($pptPid)
+        } else {
+            Write-Host " [Info] Skipping kill-on-close binding (existing instance or PID unresolved)." -ForegroundColor DarkGray
+        }
+    } catch {
+        Write-Warning "Could not bind PowerPoint to kill-on-close job: $($_.Exception.Message)"
+    }
+}
