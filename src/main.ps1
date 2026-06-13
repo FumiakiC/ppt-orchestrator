@@ -20,6 +20,23 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
 try { [ConsoleWindow]::DisableQuickEdit() } catch {}
 [console]::TreatControlCAsInput = $true
 
+# Stabilize console dimensions so header info (PIN / URL) is not pushed off-screen.
+# Buffer height is kept large so content never overflows the buffer (with quick-edit off, scrolling is unavailable).
+try {
+    $rawUI = $Host.UI.RawUI
+    $desiredWidth  = [Math]::Max($rawUI.BufferSize.Width, 100)
+    $desiredWinH   = 40
+    $maxWinH       = $rawUI.MaxPhysicalWindowSize.Height
+    if ($maxWinH -gt 0 -and $desiredWinH -gt $maxWinH) { $desiredWinH = $maxWinH }
+
+    # Buffer must be >= window. Set buffer first (width+height), then window.
+    $rawUI.BufferSize = New-Object System.Management.Automation.Host.Size($desiredWidth, 1000)
+    $newWin = New-Object System.Management.Automation.Host.Size($desiredWidth, $desiredWinH)
+    $rawUI.WindowSize = $newWin
+} catch {
+    # Non-fatal: some hosts (e.g. redirected output) don't support resizing.
+}
+
 if (-not (Test-Path $TargetFolderPath)) { Write-Error "Target Folder Not Found"; exit }
 $finishFolderPath = Join-Path $TargetFolderPath $FinishFolderName
 if (-not (Test-Path $finishFolderPath)) { New-Item -Path $finishFolderPath -ItemType Directory | Out-Null }

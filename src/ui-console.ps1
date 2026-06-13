@@ -105,6 +105,15 @@
         }
         Write-Host ""
         Write-Host $line -ForegroundColor DarkCyan
+        Write-Host " [Quick Ref]  " -NoNewline -ForegroundColor DarkCyan
+        Write-Host "🔐 PIN " -NoNewline -ForegroundColor DarkGray
+        Write-Host "$script:AuthPin" -ForegroundColor Yellow
+        foreach ($adapter in $adapters) {
+            Write-Host "   · " -NoNewline -ForegroundColor DarkGray
+            Write-Host "http://$($adapter.IPAddress):$($WebPort)/" -NoNewline -ForegroundColor Gray
+            Write-Host "  ($($adapter.InterfaceAlias))" -ForegroundColor DarkGray
+        }
+        Write-Host $line -ForegroundColor DarkCyan
         Write-Host "  Copyright (c) 2026 FumiakiC" -ForegroundColor DarkGray
         Write-Host ""
         Write-Host " ▶ Waiting for command... (Press a key to execute immediately)" -ForegroundColor Green
