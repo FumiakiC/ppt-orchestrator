@@ -17,6 +17,7 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
 }
 
 [ConsoleWindow]::DisableCloseButton()
+try { [ConsoleWindow]::DisableQuickEdit() } catch {}
 [console]::TreatControlCAsInput = $true
 
 if (-not (Test-Path $TargetFolderPath)) { Write-Error "Target Folder Not Found"; exit }

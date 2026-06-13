@@ -45,6 +45,26 @@ public class ConsoleWindow {
             }
         }
     }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr GetStdHandle(int nStdHandle);
+    [DllImport("kernel32.dll")]
+    public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+    [DllImport("kernel32.dll")]
+    public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+
+    public const int  STD_INPUT_HANDLE      = -10;
+    public const uint ENABLE_QUICK_EDIT_MODE = 0x0040;
+    public const uint ENABLE_EXTENDED_FLAGS  = 0x0080;
+
+    public static void DisableQuickEdit() {
+        IntPtr h = GetStdHandle(STD_INPUT_HANDLE);
+        uint mode;
+        if (h != IntPtr.Zero && h != (IntPtr)(-1) && GetConsoleMode(h, out mode)) {
+            mode = (mode & ~ENABLE_QUICK_EDIT_MODE) | ENABLE_EXTENDED_FLAGS;
+            SetConsoleMode(h, mode);
+        }
+    }
 }
 "@
 }
