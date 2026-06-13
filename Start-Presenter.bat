@@ -90,7 +90,7 @@ echo [FW] Removing existing rule (same name): %FW_RULE_NAME%
 
 echo [FW] Adding new rule: %FW_RULE_NAME%
 "%POWERSHELL%" -NoProfile -Command ^
-  "New-NetFirewallRule -DisplayName '%FW_RULE_NAME%' -Direction Inbound -Action Allow -Protocol TCP -LocalPort %WEB_PORT% -RemoteAddress %ALLOWED_REMOTE% -Profile Any" >nul 2>&1
+    "New-NetFirewallRule -DisplayName '%FW_RULE_NAME%' -Direction Inbound -Action Allow -Protocol TCP -LocalPort %WEB_PORT% -RemoteAddress ('%ALLOWED_REMOTE%' -split ',' | ForEach-Object { $_.Trim() }) -Profile Any" >nul 2>&1
 
 if %errorlevel% neq 0 (
     echo [Warning] Error creating Firewall rule. It may be restricted by GPO or other policies.
