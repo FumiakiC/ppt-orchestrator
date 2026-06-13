@@ -10,7 +10,8 @@
         }
     ),
     [string]$FinishFolderName = "finish",
-    [int]$WebPort = 8090
+    [int]$WebPort = 8090,
+    [string]$StatePath = (Join-Path $env:ProgramData 'ppt-orchestrator\session.json')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,7 +49,63 @@ public class ConsoleWindow {
 "@
 }
 
-$script:AuthPin             = Get-Random -Minimum 100000 -Maximum 999999
-$script:SessionToken        = [guid]::NewGuid().ToString('N')
+# --- Daily-persistent PIN / session token (admin-only state file) ---
+function New-SecurePin {
+    # Cryptographically secure, uniform 6-digit PIN (100000-999999), rejection-sampled to avoid modulo bias
+    $rng = [System.Security.Cryptography.RNGCryptoServiceProvider]::new()
+    try {
+        $range = [uint32]900000
+        $limit = [uint32]([uint32]::MaxValue - ([uint32]::MaxValue % $range))
+        do {
+            $bytes = [byte[]]::new(4)
+            $rng.GetBytes($bytes)
+            $val = [System.BitConverter]::ToUInt32($bytes, 0)
+        } while ($val -ge $limit)
+        return [int](100000 + ($val % $range))
+    } finally { $rng.Dispose() }
+}
+
+$today     = (Get-Date).ToString('yyyy-MM-dd')
+$loadedPin = $null
+$loadedTok = $null
+try {
+    if (Test-Path -LiteralPath $StatePath) {
+        $state = Get-Content -LiteralPath $StatePath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if ($state.Date -eq $today -and $state.Pin -and $state.Token) {
+            $loadedPin = [int]$state.Pin
+            $loadedTok = [string]$state.Token
+        }
+    }
+} catch {
+    $loadedPin = $null; $loadedTok = $null   # corrupt/unreadable -> regenerate
+}
+
+if ($loadedPin -and $loadedTok) {
+    $script:AuthPin      = $loadedPin
+    $script:SessionToken = $loadedTok
+} else {
+    $script:AuthPin      = New-SecurePin
+    $script:SessionToken = [guid]::NewGuid().ToString('N')
+    try {
+        $dir = Split-Path -Parent $StatePath
+        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        # restrict the folder to Administrators + SYSTEM (break inheritance)
+        try {
+            $acl = New-Object System.Security.AccessControl.DirectorySecurity
+            $acl.SetAccessRuleProtection($true, $false)
+            foreach ($sidStr in @('S-1-5-32-544','S-1-5-18')) {
+                $sid  = New-Object System.Security.Principal.SecurityIdentifier($sidStr)
+                $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow')
+                $acl.AddAccessRule($rule)
+            }
+            Set-Acl -LiteralPath $dir -AclObject $acl
+        } catch { Write-Host " [Warning] Could not harden state-folder ACL: $($_.Exception.Message)" -ForegroundColor Yellow }
+
+        $payload = [ordered]@{ Date = $today; Pin = $script:AuthPin; Token = $script:SessionToken } | ConvertTo-Json
+        Set-Content -LiteralPath $StatePath -Value $payload -Encoding UTF8 -ErrorAction Stop
+    } catch {
+        Write-Host " [Warning] Could not persist session state (using in-memory values for this run): $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
 $script:LastAuthFailedTime  = [DateTime]::MinValue
 $script:ContextTask         = $null
