@@ -145,7 +145,11 @@ public static class JobGuard {
             IntPtr p = Marshal.AllocHGlobal(len);
             try {
                 Marshal.StructureToPtr(ext, p, false);
-                if (!SetInformationJobObject(_job, JobObjectExtendedLimitInformation, p, (uint)len)) return false;
+                if (!SetInformationJobObject(_job, JobObjectExtendedLimitInformation, p, (uint)len)) {
+                    CloseHandle(_job);
+                    _job = IntPtr.Zero;
+                    return false;
+                }
             } finally {
                 Marshal.FreeHGlobal(p);
             }
