@@ -61,22 +61,7 @@ if (-not $pptApp) {
 $pptApp.Visible = [Microsoft.Office.Core.MsoTriState]::msoTrue
 
 # Bind only an instance WE spawned to a kill-on-close job (never the operator's own).
-try {
-    $pptPid = 0
-    try { $pptPid = [JobGuard]::GetProcessIdFromHwnd([IntPtr]$pptApp.HWND) } catch {}
-    if ($pptPid -le 0) {
-        $newPids = @(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id) |
-                   Where-Object { $preExistingPptPids -notcontains $_ }
-        if (@($newPids).Count -eq 1) { $pptPid = $newPids[0] }
-    }
-    if ($pptPid -gt 0 -and ($preExistingPptPids -notcontains $pptPid)) {
-        [void][JobGuard]::Guard($pptPid)
-    } else {
-        Write-Host " [Info] Skipping kill-on-close binding (existing instance or PID unresolved)." -ForegroundColor DarkGray
-    }
-} catch {
-    Write-Warning "Could not bind PowerPoint to kill-on-close job: $($_.Exception.Message)"
-}
+Set-PptKillOnClose -PptApp $pptApp -PreExistingPids $preExistingPptPids
 
 try {
     $exitLoop      = $false
@@ -135,10 +120,12 @@ try {
             $pptApp = $null
             [System.GC]::Collect()
             [System.GC]::WaitForPendingFinalizers()
+            $recoveryPreexisting = @(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
             try {
                 $pptApp = New-Object -ComObject PowerPoint.Application
                 $pptApp.Visible = [Microsoft.Office.Core.MsoTriState]::msoTrue
                 Write-Host " [System] PowerPoint COM object recovered successfully." -ForegroundColor Green
+                Set-PptKillOnClose -PptApp $pptApp -PreExistingPids $recoveryPreexisting
             } catch {
                 Write-Host " [Error] Failed to recover PowerPoint: $($_.Exception.Message)" -ForegroundColor Red
                 Start-Sleep 3
