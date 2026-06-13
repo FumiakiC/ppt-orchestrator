@@ -28,7 +28,8 @@ REM     Single operator PC (most secure):   172.20.3.20/32
 REM     Operator subnet(s):                 172.20.2.0/24,172.20.3.0/24
 REM     Single-segment venue Wi-Fi:         LocalSubnet
 REM     Unrestricted (current default):     Any
-set "ALLOWED_REMOTE=Any"
+REM   (Can also be overridden via environment variable without editing this file.)
+if not defined ALLOWED_REMOTE set "ALLOWED_REMOTE=Any"
 
 REM PowerShell command
 set "POWERSHELL=powershell.exe"
