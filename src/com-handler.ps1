@@ -12,6 +12,10 @@
 
     $status = "NormalEnd"
 
+    $lockActive  = $false
+    $ownerCid    = ''
+    $ownerSeen   = [DateTime]::UtcNow
+    $ownerTtlSec = 15
     $projBlack   = $false
     $projWhite   = $false
     $totalSlides = 0
@@ -59,6 +63,29 @@
                     continue
                 }
 
+                # ---- クライアントID(cid) の抽出（POSTボディ or GETクエリ） ----
+                $cid = ''
+                if ($req.HttpMethod -eq "POST") {
+                    $reqBody = $null
+                    if ($req.HasEntityBody) {
+                        $encoding = if ($req.ContentEncoding) { $req.ContentEncoding } else { [System.Text.Encoding]::UTF8 }
+                        $sr = New-Object System.IO.StreamReader($req.InputStream, $encoding)
+                        try { $reqBody = $sr.ReadToEnd() } finally { $sr.Dispose() }
+                    }
+                    if ($reqBody -and ([System.Web.HttpUtility]::UrlDecode($reqBody) -match 'cid=([A-Za-z0-9_\-]+)')) {
+                        $cid = $matches[1]
+                    }
+                } else {
+                    $qcid = $req.QueryString['cid']
+                    if ($qcid) { $cid = $qcid }
+                }
+
+                # ---- 失効した操作権の自動解放（無反応TTL超過） ----
+                if ($lockActive -and (([DateTime]::UtcNow - $ownerSeen).TotalSeconds -gt $ownerTtlSec)) {
+                    $lockActive = $false
+                    $ownerCid   = ''
+                }
+
                 if ($path -eq "/status") {
                     Send-HttpResponse -Response $res -Content "running" -ContentType "text/plain"
                 } elseif ($path -eq "/elapsed") {
@@ -75,14 +102,36 @@
                             }
                         }
                     } catch {}
+
+                    $mine = ($lockActive -and $cid -and ($ownerCid -eq $cid))
+                    if ($mine) { $ownerSeen = [DateTime]::UtcNow }
+
                     $ms = [long][Math]::Floor(([DateTime]::UtcNow - $startTime).TotalMilliseconds)
                     $payload = @{
                         ms    = $ms
                         pos   = $pos
                         total = $totalSlides
+                        lock  = [bool]$lockActive
+                        mine  = [bool]$mine
                         black = [bool]$projBlack
                         white = [bool]$projWhite
                     } | ConvertTo-Json -Compress
+                    Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
+                } elseif ($path -eq "/lock/on" -and $req.HttpMethod -eq "POST") {
+                    if ((-not $lockActive) -or ($ownerCid -eq $cid)) {
+                        $lockActive = $true; $ownerCid = $cid; $ownerSeen = [DateTime]::UtcNow
+                        $payload = @{ ok = $true; mine = $true; busy = $false } | ConvertTo-Json -Compress
+                    } else {
+                        $payload = @{ ok = $false; mine = $false; busy = $true } | ConvertTo-Json -Compress
+                    }
+                    Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
+                } elseif ($path -eq "/lock/steal" -and $req.HttpMethod -eq "POST") {
+                    $lockActive = $true; $ownerCid = $cid; $ownerSeen = [DateTime]::UtcNow
+                    $payload = @{ ok = $true; mine = $true } | ConvertTo-Json -Compress
+                    Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
+                } elseif ($path -eq "/lock/off" -and $req.HttpMethod -eq "POST") {
+                    if ($ownerCid -eq $cid) { $lockActive = $false; $ownerCid = '' }
+                    $payload = @{ ok = $true } | ConvertTo-Json -Compress
                     Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
                 } elseif (($path -like '/slide/*') -and $req.HttpMethod -eq "POST") {
                     $cmd   = $path.Substring(7)   # '/slide/'.Length = 7
@@ -90,7 +139,13 @@
                     if ($valid -notcontains $cmd) {
                         $payload = @{ ok = $false; error = 'unknown' } | ConvertTo-Json -Compress
                         Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
-                    } else {
+                    }
+                    elseif (-not ($lockActive -and $cid -and ($ownerCid -eq $cid))) {
+                        $payload = @{ ok = $false; locked = $true } | ConvertTo-Json -Compress
+                        Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
+                    }
+                    else {
+                        $ownerSeen = [DateTime]::UtcNow
                         $ok = $false
                         try {
                             if ($PptApp.SlideShowWindows.Count -ge 1) {
@@ -124,11 +179,9 @@
                             }
                         } catch {}
                         $payload = @{
-                            ok    = [bool]$ok
-                            pos   = $pos
-                            total = $totalSlides
-                            black = [bool]$projBlack
-                            white = [bool]$projWhite
+                            ok    = [bool]$ok; locked = $false
+                            pos   = $pos; total = $totalSlides
+                            black = [bool]$projBlack; white = [bool]$projWhite
                         } | ConvertTo-Json -Compress
                         Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
                     }

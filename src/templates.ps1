@@ -310,27 +310,58 @@ $script:HtmlTemplates = @{
         <div class="now-timer" id="elapsed">00:00</div>
         <div class="pos" id="pos">&mdash; / &mdash;</div>
 
-        <div class="slidepad" id="pad">
-            <button class="slide-btn nav" data-cmd="prev"  aria-label="Previous">&#9664;</button>
-            <button class="slide-btn nav" data-cmd="next"  aria-label="Next">&#9654;</button>
-            <button class="slide-btn"     data-cmd="first">&#9198; First</button>
-            <button class="slide-btn"     data-cmd="last" >Last &#9197;</button>
-            <button class="slide-btn blk" data-cmd="blackout">&#9632; Black</button>
-            <button class="slide-btn blk" data-cmd="whiteout">&#9633; White</button>
+        <div class="lockbar" id="lockbar">
+            <div class="lbl" id="lockLbl">REMOTE CONTROL LOCK</div>
+            <div class="switch" id="lockSwitch" role="switch" aria-checked="false" tabindex="0"><i></i></div>
+        </div>
+        <div class="lock-other" id="lockOther" hidden>
+            <span>This presentation is being controlled by another device.</span>
+            <button class="steal-btn hold" id="stealBtn" type="button" data-hold="1500">
+                <svg class="hold-ring" viewBox="0 0 100 100" preserveAspectRatio="none"><rect x="1.5" y="1.5" width="97" height="97" rx="11" pathLength="100"/></svg>
+                <span>Hold to take control</span>
+            </button>
         </div>
 
-        <form method="post" action="/stop" class="now-actions">
-            <button class="ctl-btn danger" type="submit">&#9632; Stop Presentation</button>
+        <div class="slidepad" id="pad">
+            <button class="slide-btn nav" data-cmd="prev"  disabled aria-label="Previous">&#9664;</button>
+            <button class="slide-btn nav" data-cmd="next"  disabled aria-label="Next">&#9654;</button>
+            <button class="slide-btn"     data-cmd="first" disabled>&#9198; First</button>
+            <button class="slide-btn"     data-cmd="last"  disabled>Last &#9197;</button>
+            <button class="slide-btn blk" data-cmd="blackout" disabled>&#9632; Black</button>
+            <button class="slide-btn blk" data-cmd="whiteout" disabled>&#9633; White</button>
+        </div>
+
+        <form method="post" action="/stop" class="now-actions" id="stopForm">
+            <button class="ctl-btn danger hold" type="button" id="stopBtn" data-hold="1500">
+                <svg class="hold-ring" viewBox="0 0 100 100" preserveAspectRatio="none"><rect x="1.5" y="1.5" width="97" height="97" rx="13" pathLength="100"/></svg>
+                <span>&#9632; Hold to Stop</span>
+            </button>
         </form>
     </div>
     <style>
         .np .pos { font:600 13px var(--mono); color:var(--txt-dim); letter-spacing:2px; margin-top:4px; }
+        .lockbar { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; max-width:360px; margin:26px 0 0; padding:11px 14px 11px 16px; border:1px solid var(--line); border-radius:13px; background:var(--panel); }
+        .lockbar .lbl { font:700 11px/1 var(--mono); letter-spacing:1.6px; color:var(--txt-dim); transition:color .16s; }
+        .switch { width:54px; height:30px; border-radius:999px; background:var(--bg-2); border:1px solid var(--line); position:relative; cursor:pointer; transition:.16s var(--ease); flex:0 0 auto; }
+        .switch i { position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%; background:var(--txt-faint); transition:.16s var(--ease); }
+        .switch.on { background:rgba(90,169,255,.25); border-color:var(--accent); }
+        .switch.on i { left:26px; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+        .lock-other { display:flex; flex-direction:column; align-items:center; gap:10px; width:100%; max-width:360px; margin:12px 0 0; font:600 12.5px var(--sans); color:var(--standby); line-height:1.4; }
+        .steal-btn { position:relative; overflow:hidden; padding:11px 18px; border-radius:11px; border:1px solid rgba(245,166,35,.4); background:rgba(245,166,35,.08); color:var(--standby); font:650 13px var(--sans); cursor:pointer; }
         .slidepad { display:grid; grid-template-columns:1fr 1fr; gap:10px; width:100%; max-width:360px; margin:22px 0 0; }
         .slide-btn { padding:15px; border-radius:12px; border:1px solid var(--line); background:var(--panel-2); color:var(--txt); font:650 14px var(--sans); cursor:pointer; transition:.12s var(--ease); display:flex; align-items:center; justify-content:center; gap:8px; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
         .slide-btn.nav { font-size:22px; padding:20px; }
         .slide-btn.blk { color:var(--txt-dim); }
-        .slide-btn:active { transform:scale(.96); }
+        .slide-btn:active:not(:disabled) { transform:scale(.96); }
+        .slide-btn:disabled { opacity:.35; cursor:not-allowed; }
         .slide-btn.act { border-color:var(--accent); color:var(--accent); background:rgba(90,169,255,.10); }
+        .container.armed { animation:armPulse 1.7s ease-in-out infinite; }
+        @keyframes armPulse { 0%,100% { box-shadow:0 0 0 1.5px rgba(90,169,255,.55), 0 0 26px -2px var(--accent); } 50% { box-shadow:0 0 0 1.5px rgba(90,169,255,.9), 0 0 50px 2px var(--accent); } }
+        .hold { position:relative; overflow:hidden; }
+        .hold .hold-ring { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; opacity:0; transition:opacity .12s; }
+        .hold.charging .hold-ring { opacity:1; }
+        .hold .hold-ring rect { fill:none; stroke:#ff6b6d; stroke-width:3; stroke-dasharray:100; stroke-dashoffset:100; }
+        .steal-btn .hold-ring rect { stroke:var(--standby); }
     </style>
     <script>
     (function() {
@@ -340,16 +371,28 @@ $script:HtmlTemplates = @{
             sessionStorage.setItem('ppt_cid', cid);
         }
 
-        var el     = document.getElementById('elapsed');
-        var posEl  = document.getElementById('pos');
-        var dot    = document.querySelector('.onair i');
-        var pad    = document.getElementById('pad');
-        var btns   = pad.querySelectorAll('.slide-btn');
-        var blkBtn = pad.querySelector('[data-cmd="blackout"]');
-        var whtBtn = pad.querySelector('[data-cmd="whiteout"]');
+        var el        = document.getElementById('elapsed');
+        var posEl     = document.getElementById('pos');
+        var dot       = document.querySelector('.onair i');
+        var pad       = document.getElementById('pad');
+        var btns      = pad.querySelectorAll('.slide-btn');
+        var lockSw    = document.getElementById('lockSwitch');
+        var lockLbl   = document.getElementById('lockLbl');
+        var lockOther = document.getElementById('lockOther');
+        var stealBtn  = document.getElementById('stealBtn');
+        var stopBtn   = document.getElementById('stopBtn');
+        var stopForm  = document.getElementById('stopForm');
+        var container = document.querySelector('.container');
+        var blkBtn    = pad.querySelector('[data-cmd="blackout"]');
+        var whtBtn    = pad.querySelector('[data-cmd="whiteout"]');
 
         var baseMs = 0, baseAt = performance.now(), seeded = false, lastT = '';
+        var armed = false, lockOn = false;
 
+        function post(url) {
+            return fetch(url, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'cid=' + encodeURIComponent(cid) })
+                   .then(function(r){ return r.json(); });
+        }
         function buzz(p) { if (navigator.vibrate) { try { navigator.vibrate(p); } catch(e){} } }
 
         function paint() {
@@ -364,9 +407,37 @@ $script:HtmlTemplates = @{
             requestAnimationFrame(paint);
         }
 
+        function setArmed(on) {
+            armed = on;
+            for (var i = 0; i < btns.length; i++) { btns[i].disabled = !on; }
+            if (container) container.classList.toggle('armed', on);
+        }
         function setProj(black, white) {
             if (blkBtn) blkBtn.classList.toggle('act', !!black);
             if (whtBtn) whtBtn.classList.toggle('act', !!white);
+        }
+        function renderLock(st) {
+            lockOn = !!st.lock;
+            var mine = !!st.mine;
+            lockSw.classList.toggle('on', mine);
+            lockSw.setAttribute('aria-checked', mine ? 'true' : 'false');
+            if (mine) {
+                lockLbl.textContent = 'YOU HAVE CONTROL';
+                lockLbl.style.color = 'var(--accent)';
+                lockOther.hidden = true;
+                setArmed(true);
+            } else if (lockOn) {
+                lockLbl.textContent = 'LOCKED BY ANOTHER';
+                lockLbl.style.color = 'var(--standby)';
+                lockOther.hidden = false;
+                setArmed(false);
+            } else {
+                lockLbl.textContent = 'REMOTE CONTROL LOCK';
+                lockLbl.style.color = '';
+                lockOther.hidden = true;
+                setArmed(false);
+            }
+            setProj(st.black, st.white);
         }
 
         function pollState() {
@@ -376,27 +447,27 @@ $script:HtmlTemplates = @{
                 var predicted = baseMs + (performance.now() - baseAt);
                 if (!seeded || Math.abs(st.ms - predicted) > 1000) { baseMs = st.ms; baseAt = performance.now(); seeded = true; }
                 if (st.total > 0 && posEl) { posEl.textContent = st.pos + ' / ' + st.total; }
-                setProj(st.black, st.white);
+                renderLock(st);
             })
             .catch(function(){});
         }
 
         function sendSlide(cmd) {
+            if (!armed) return;
             buzz(12);
-            fetch('/slide/' + cmd, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'cid=' + encodeURIComponent(cid) })
-            .then(function(r){ return r.json(); })
-            .then(function(res){
+            post('/slide/' + cmd).then(function(res){
                 if (!res) return;
+                if (res.locked) { setArmed(false); pollState(); return; }
                 if (res.total > 0 && posEl) { posEl.textContent = res.pos + ' / ' + res.total; }
                 setProj(res.black, res.white);
             });
         }
-
         for (var i = 0; i < btns.length; i++) {
             (function(b){ b.addEventListener('click', function(){ sendSlide(b.getAttribute('data-cmd')); }); })(btns[i]);
         }
 
         document.addEventListener('keydown', function(e){
+            if (!armed) return;
             var k = e.key;
             if (k === 'ArrowRight' || k === 'PageDown' || k === ' ' || k === 'Spacebar') { e.preventDefault(); sendSlide('next'); }
             else if (k === 'ArrowLeft' || k === 'PageUp') { e.preventDefault(); sendSlide('prev'); }
@@ -405,6 +476,34 @@ $script:HtmlTemplates = @{
             else if (k === 'b' || k === 'B') { sendSlide('blackout'); }
             else if (k === 'w' || k === 'W') { sendSlide('whiteout'); }
         });
+
+        function toggleLock() {
+            if (armed) { post('/lock/off').then(pollState); }
+            else if (!lockOn) { post('/lock/on').then(function(){ pollState(); }); }
+            else { pollState(); }
+        }
+        lockSw.addEventListener('click', toggleLock);
+        lockSw.addEventListener('keydown', function(e){ if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLock(); } });
+
+        function bindHold(btn, onComplete) {
+            var dur = parseInt(btn.getAttribute('data-hold'), 10) || 1500;
+            var ring = btn.querySelector('.hold-ring rect');
+            var raf = null, t0 = 0;
+            function frame(now) {
+                var p = Math.min((now - t0) / dur, 1);
+                if (ring) ring.style.strokeDashoffset = String(100 - p * 100);
+                if (p >= 1) { stop(true); onComplete(); return; }
+                raf = requestAnimationFrame(frame);
+            }
+            function start(e) { if (btn.disabled) return; e.preventDefault(); btn.classList.add('charging'); t0 = performance.now(); raf = requestAnimationFrame(frame); buzz(10); }
+            function stop(done) { if (raf) { cancelAnimationFrame(raf); raf = null; } btn.classList.remove('charging'); if (ring) ring.style.strokeDashoffset = '100'; if (done) buzz([20,40,20]); }
+            btn.addEventListener('pointerdown', start);
+            btn.addEventListener('pointerup', function(){ stop(false); });
+            btn.addEventListener('pointerleave', function(){ stop(false); });
+            btn.addEventListener('pointercancel', function(){ stop(false); });
+        }
+        bindHold(stopBtn, function(){ if (stopForm.requestSubmit) stopForm.requestSubmit(); else stopForm.submit(); });
+        if (stealBtn) bindHold(stealBtn, function(){ post('/lock/steal').then(pollState); });
 
         var wl = null;
         function reqWake() {
