@@ -20,3 +20,14 @@ dist/
 #Documents
 docs/
 reference/
+
+# --- OS Generated Files (勝手なファイル生成対策) ---
+# Mac
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
