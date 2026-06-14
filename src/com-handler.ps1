@@ -6,10 +6,15 @@
     )
 
     $head     = Get-HtmlHeader -Title "Now Playing" -BgColor "#000000"
-    $bodyHtml = $script:HtmlTemplates.NowPlayingView -f ([System.Web.HttpUtility]::HtmlEncode($TargetFileItem.Name))
+    $bodyHtml = $script:HtmlTemplates.NowPlayingView.Replace(
+        '%%DECK%%', [System.Web.HttpUtility]::HtmlEncode($TargetFileItem.Name))
     $fullHtml = $head + $bodyHtml
 
     $status = "NormalEnd"
+
+    $projBlack   = $false
+    $projWhite   = $false
+    $totalSlides = 0
 
     try {
         $isFileOpen = $true
@@ -59,6 +64,74 @@
                 } elseif ($path -eq "/elapsed") {
                     $ms = [long][Math]::Floor(([DateTime]::UtcNow - $startTime).TotalMilliseconds)
                     Send-HttpResponse -Response $res -Content "$ms" -ContentType "text/plain"
+                } elseif ($path -eq "/slide/state") {
+                    $pos = 0
+                    try {
+                        if ($PptApp.SlideShowWindows.Count -ge 1) {
+                            $view = $PptApp.SlideShowWindows.Item(1).View
+                            $pos  = [int]$view.CurrentShowPosition
+                            if ($totalSlides -le 0) {
+                                $totalSlides = [int]$PptApp.SlideShowWindows.Item(1).Presentation.Slides.Count
+                            }
+                        }
+                    } catch {}
+                    $ms = [long][Math]::Floor(([DateTime]::UtcNow - $startTime).TotalMilliseconds)
+                    $payload = @{
+                        ms    = $ms
+                        pos   = $pos
+                        total = $totalSlides
+                        black = [bool]$projBlack
+                        white = [bool]$projWhite
+                    } | ConvertTo-Json -Compress
+                    Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
+                } elseif (($path -like '/slide/*') -and $req.HttpMethod -eq "POST") {
+                    $cmd   = $path.Substring(7)   # '/slide/'.Length = 7
+                    $valid = @('next','prev','first','last','blackout','whiteout')
+                    if ($valid -notcontains $cmd) {
+                        $payload = @{ ok = $false; error = 'unknown' } | ConvertTo-Json -Compress
+                        Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
+                    } else {
+                        $ok = $false
+                        try {
+                            if ($PptApp.SlideShowWindows.Count -ge 1) {
+                                $view = $PptApp.SlideShowWindows.Item(1).View
+                                switch ($cmd) {
+                                    'next'     { $view.Next();     $projBlack = $false; $projWhite = $false }
+                                    'prev'     { $view.Previous(); $projBlack = $false; $projWhite = $false }
+                                    'first'    { $view.First();    $projBlack = $false; $projWhite = $false }
+                                    'last'     { $view.Last();     $projBlack = $false; $projWhite = $false }
+                                    'blackout' {
+                                        if ($projBlack) { $view.State = 1; $projBlack = $false }
+                                        else            { $view.State = 3; $projBlack = $true; $projWhite = $false }
+                                    }
+                                    'whiteout' {
+                                        if ($projWhite) { $view.State = 1; $projWhite = $false }
+                                        else            { $view.State = 4; $projWhite = $true; $projBlack = $false }
+                                    }
+                                }
+                                $ok = $true
+                            }
+                        } catch {
+                            Write-Host " [Warning] Slide control '$cmd' failed: $($_.Exception.Message)" -ForegroundColor Yellow
+                        }
+                        $pos = 0
+                        try {
+                            if ($PptApp.SlideShowWindows.Count -ge 1) {
+                                $pos = [int]$PptApp.SlideShowWindows.Item(1).View.CurrentShowPosition
+                                if ($totalSlides -le 0) {
+                                    $totalSlides = [int]$PptApp.SlideShowWindows.Item(1).Presentation.Slides.Count
+                                }
+                            }
+                        } catch {}
+                        $payload = @{
+                            ok    = [bool]$ok
+                            pos   = $pos
+                            total = $totalSlides
+                            black = [bool]$projBlack
+                            white = [bool]$projWhite
+                        } | ConvertTo-Json -Compress
+                        Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
+                    }
                 } elseif ($path -eq "/stop" -and $req.HttpMethod -eq "POST") {
                     $status = "ManualStop"
                     try {

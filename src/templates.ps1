@@ -301,59 +301,125 @@ $script:HtmlTemplates = @{
     <div class="container">
 "@
 
-    # Now Presenting view. Format args: {0}=FileName
+    # Now Presenting view (remote control). Injected via .Replace on %%DECK%% (single braces; NOT -f).
     NowPlayingView = @"
-    <div class="stage">
+    <div class="stage np">
         <div class="onair"><i></i> ON AIR</div>
-        <div class="now-name">{0}</div>
-        <div class="now-sub">Controlling slides on the host PC</div>
+        <div class="now-name">%%DECK%%</div>
+        <div class="now-sub">Remote slide control</div>
         <div class="now-timer" id="elapsed">00:00</div>
+        <div class="pos" id="pos">&mdash; / &mdash;</div>
+
+        <div class="slidepad" id="pad">
+            <button class="slide-btn nav" data-cmd="prev"  aria-label="Previous">&#9664;</button>
+            <button class="slide-btn nav" data-cmd="next"  aria-label="Next">&#9654;</button>
+            <button class="slide-btn"     data-cmd="first">&#9198; First</button>
+            <button class="slide-btn"     data-cmd="last" >Last &#9197;</button>
+            <button class="slide-btn blk" data-cmd="blackout">&#9632; Black</button>
+            <button class="slide-btn blk" data-cmd="whiteout">&#9633; White</button>
+        </div>
+
         <form method="post" action="/stop" class="now-actions">
             <button class="ctl-btn danger" type="submit">&#9632; Stop Presentation</button>
         </form>
     </div>
+    <style>
+        .np .pos { font:600 13px var(--mono); color:var(--txt-dim); letter-spacing:2px; margin-top:4px; }
+        .slidepad { display:grid; grid-template-columns:1fr 1fr; gap:10px; width:100%; max-width:360px; margin:22px 0 0; }
+        .slide-btn { padding:15px; border-radius:12px; border:1px solid var(--line); background:var(--panel-2); color:var(--txt); font:650 14px var(--sans); cursor:pointer; transition:.12s var(--ease); display:flex; align-items:center; justify-content:center; gap:8px; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+        .slide-btn.nav { font-size:22px; padding:20px; }
+        .slide-btn.blk { color:var(--txt-dim); }
+        .slide-btn:active { transform:scale(.96); }
+        .slide-btn.act { border-color:var(--accent); color:var(--accent); background:rgba(90,169,255,.10); }
+    </style>
     <script>
-        (function() {{
-            var el  = document.getElementById('elapsed');
-            var dot = document.querySelector('.onair i');
-            var baseMs = 0, baseAt = performance.now(), seeded = false, lastText = '';
+    (function() {
+        var cid = sessionStorage.getItem('ppt_cid');
+        if (!cid) {
+            cid = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '' + Math.random()).replace(/\D/g,'').slice(0,18);
+            sessionStorage.setItem('ppt_cid', cid);
+        }
 
-            function paint() {{
-                var total = baseMs + (performance.now() - baseAt);
-                if (total < 0) total = 0;
-                var s = Math.floor(total / 1000);
-                var m = String(Math.floor(s / 60)).padStart(2, '0');
-                var x = String(s % 60).padStart(2, '0');
-                var txt = m + ':' + x;
-                if (el && txt !== lastText) {{ el.textContent = txt; lastText = txt; }}
-                if (dot) {{ dot.style.opacity = (total % 1000) < 500 ? '1' : '0.25'; }}
-                requestAnimationFrame(paint);
-            }}
+        var el     = document.getElementById('elapsed');
+        var posEl  = document.getElementById('pos');
+        var dot    = document.querySelector('.onair i');
+        var pad    = document.getElementById('pad');
+        var btns   = pad.querySelectorAll('.slide-btn');
+        var blkBtn = pad.querySelector('[data-cmd="blackout"]');
+        var whtBtn = pad.querySelector('[data-cmd="whiteout"]');
 
-            function sync(force) {{
-                fetch('/elapsed?t=' + Date.now())
-                .then(function(r) {{ return r.text(); }})
-                .then(function(t) {{
-                    var serverMs = parseInt(t, 10);
-                    if (isNaN(serverMs)) return;
-                    var predicted = baseMs + (performance.now() - baseAt);
-                    if (force || !seeded || Math.abs(serverMs - predicted) > 1000) {{
-                        baseMs = serverMs;
-                        baseAt = performance.now();
-                        seeded = true;
-                    }}
-                }})
-                .catch(function() {{}});
-            }}
+        var baseMs = 0, baseAt = performance.now(), seeded = false, lastT = '';
 
-            sync(true);
+        function buzz(p) { if (navigator.vibrate) { try { navigator.vibrate(p); } catch(e){} } }
+
+        function paint() {
+            var total = baseMs + (performance.now() - baseAt);
+            if (total < 0) total = 0;
+            var s = Math.floor(total / 1000);
+            var m = String(Math.floor(s / 60)).padStart(2, '0');
+            var x = String(s % 60).padStart(2, '0');
+            var t = m + ':' + x;
+            if (el && t !== lastT) { el.textContent = t; lastT = t; }
+            if (dot) { dot.style.opacity = (total % 1000) < 500 ? '1' : '0.25'; }
             requestAnimationFrame(paint);
-            document.addEventListener('visibilitychange', function() {{
-                if (document.visibilityState === 'visible') sync(true);
-            }});
-            setInterval(function() {{ sync(false); }}, 60000);
-        }})();
-        window.startPolling(['running'], '/', {{ defaultDelay: 1500 }});
+        }
+
+        function setProj(black, white) {
+            if (blkBtn) blkBtn.classList.toggle('act', !!black);
+            if (whtBtn) whtBtn.classList.toggle('act', !!white);
+        }
+
+        function pollState() {
+            fetch('/slide/state?cid=' + encodeURIComponent(cid) + '&t=' + Date.now())
+            .then(function(r){ return r.json(); })
+            .then(function(st){
+                var predicted = baseMs + (performance.now() - baseAt);
+                if (!seeded || Math.abs(st.ms - predicted) > 1000) { baseMs = st.ms; baseAt = performance.now(); seeded = true; }
+                if (st.total > 0 && posEl) { posEl.textContent = st.pos + ' / ' + st.total; }
+                setProj(st.black, st.white);
+            })
+            .catch(function(){});
+        }
+
+        function sendSlide(cmd) {
+            buzz(12);
+            fetch('/slide/' + cmd, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'cid=' + encodeURIComponent(cid) })
+            .then(function(r){ return r.json(); })
+            .then(function(res){
+                if (!res) return;
+                if (res.total > 0 && posEl) { posEl.textContent = res.pos + ' / ' + res.total; }
+                setProj(res.black, res.white);
+            });
+        }
+
+        for (var i = 0; i < btns.length; i++) {
+            (function(b){ b.addEventListener('click', function(){ sendSlide(b.getAttribute('data-cmd')); }); })(btns[i]);
+        }
+
+        document.addEventListener('keydown', function(e){
+            var k = e.key;
+            if (k === 'ArrowRight' || k === 'PageDown' || k === ' ' || k === 'Spacebar') { e.preventDefault(); sendSlide('next'); }
+            else if (k === 'ArrowLeft' || k === 'PageUp') { e.preventDefault(); sendSlide('prev'); }
+            else if (k === 'Home') { e.preventDefault(); sendSlide('first'); }
+            else if (k === 'End')  { e.preventDefault(); sendSlide('last'); }
+            else if (k === 'b' || k === 'B') { sendSlide('blackout'); }
+            else if (k === 'w' || k === 'W') { sendSlide('whiteout'); }
+        });
+
+        var wl = null;
+        function reqWake() {
+            if (document.visibilityState === 'visible' && 'wakeLock' in navigator) {
+                navigator.wakeLock.request('screen').then(function(s){ wl = s; }).catch(function(){});
+            }
+        }
+        reqWake();
+        document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible') { reqWake(); pollState(); } });
+
+        requestAnimationFrame(paint);
+        pollState();
+        setInterval(pollState, 1200);
+        window.startPolling(['running'], '/');
+    })();
     </script>
 </div></body></html>
 "@
