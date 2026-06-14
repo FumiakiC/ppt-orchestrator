@@ -153,7 +153,7 @@
         $bodyContent = $script:HtmlTemplates.DialogView -f ([System.Web.HttpUtility]::HtmlEncode($CurrentFileName)), $nxtSt, $nxtLbl
     }
 
-    $mainHtml       = $head + $bodyContent + $script:HtmlTemplates.PollingScript + "</div></body></html>"
+    $mainHtml       = $head + $bodyContent + $script:HtmlTemplates.HoldToConfirmScript + $script:HtmlTemplates.PollingScript + "</div></body></html>"
     $processingHtml = $head + $script:HtmlTemplates.ProcessingView
     $exitHtml       = $head + $script:HtmlTemplates.ExitView
 

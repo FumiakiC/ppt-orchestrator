@@ -531,8 +531,11 @@ $script:HtmlTemplates = @{
         </div>
         {2}
         <div class="footer">
-            <form method="post" action="/start" class="grow">
-                <button class="go-btn" {0}><span class="go-kicker">GO</span><span class="go-main">Start &middot; {1}</span></button>
+            <form method="post" action="/start" class="grow" id="goForm">
+                <button class="go-btn hold" type="button" {0} data-hold="1500" data-submit="goForm">
+                    <svg class="hold-ring" viewBox="0 0 100 100" preserveAspectRatio="none"><rect x="1.5" y="1.5" width="97" height="97" rx="13" pathLength="100"/></svg>
+                    <span class="go-kicker">GO</span><span class="go-main">Hold &middot; {1}</span>
+                </button>
             </form>
             <form method="post" action="/exit" class="exit-wrap" onsubmit="return confirm('Shut down the system?\nThe presentation running on the PC will also be closed.');">
                 <button class="exit-btn" type="submit" title="Exit System">Exit</button>
@@ -556,6 +559,43 @@ $script:HtmlTemplates = @{
 "@
 
     # Polling script for Lobby / Dialog (concatenated directly: single braces).
+    # Generic hold-to-charge binder for [data-hold] buttons (concatenated: single braces).
+    # data-hold = ms to charge; data-submit = form id to requestSubmit on completion (else closest form).
+    HoldToConfirmScript = @"
+    <style>
+        .hold { position:relative; overflow:hidden; }
+        .hold .hold-ring { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; opacity:0; transition:opacity .12s; }
+        .hold.charging .hold-ring { opacity:1; }
+        .hold .hold-ring rect { fill:none; stroke:rgba(255,255,255,.9); stroke-width:3; stroke-dasharray:100; stroke-dashoffset:100; }
+    </style>
+    <script>
+    (function(){
+        function buzz(p){ if (navigator.vibrate) { try { navigator.vibrate(p); } catch(e){} } }
+        function bind(btn){
+            var dur = parseInt(btn.getAttribute('data-hold'), 10) || 1500;
+            var formId = btn.getAttribute('data-submit');
+            var ring = btn.querySelector('.hold-ring rect');
+            var raf = null, t0 = 0;
+            function frame(now){
+                var p = Math.min((now - t0) / dur, 1);
+                if (ring) ring.style.strokeDashoffset = String(100 - p * 100);
+                if (p >= 1) { stop(true); fire(); return; }
+                raf = requestAnimationFrame(frame);
+            }
+            function start(e){ if (btn.disabled) return; e.preventDefault(); btn.classList.add('charging'); t0 = performance.now(); raf = requestAnimationFrame(frame); buzz(10); }
+            function stop(done){ if (raf) { cancelAnimationFrame(raf); raf = null; } btn.classList.remove('charging'); if (ring) ring.style.strokeDashoffset = '100'; if (done) buzz([20,40,20]); }
+            function fire(){ var f = formId ? document.getElementById(formId) : btn.closest('form'); if (f) { if (f.requestSubmit) f.requestSubmit(); else f.submit(); } }
+            btn.addEventListener('pointerdown', start);
+            btn.addEventListener('pointerup', function(){ stop(false); });
+            btn.addEventListener('pointerleave', function(){ stop(false); });
+            btn.addEventListener('pointercancel', function(){ stop(false); });
+        }
+        var list = document.querySelectorAll('[data-hold]');
+        for (var i = 0; i < list.length; i++) { bind(list[i]); }
+    })();
+    </script>
+"@
+
     PollingScript = @"
     <script>
         window.startPolling(['waiting'], '/', { defaultDelay: 300, statusRedirects: { 'stopping': '/exit' } });
