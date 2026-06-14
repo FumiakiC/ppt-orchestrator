@@ -225,6 +225,10 @@ $script:HtmlTemplates = @{
         @keyframes connBlink {{ 0%,100% {{ opacity: 1; }} 50% {{ opacity: .2; }} }}
         .topbar .status.st-slow {{ color: var(--standby); border-color: rgba(245,166,35,.45); }}
         .topbar .status.st-lost {{ color: var(--live); border-color: rgba(255,77,79,.5); }}
+        /* quick-tap hint (長押しを促すポップ) */
+        #holdhint {{ position:fixed; left:50%; bottom:46px; transform:translateX(-50%) translateY(10px); z-index:9300; display:flex; align-items:center; gap:8px; padding:9px 16px 9px 13px; border-radius:999px; background:rgba(18,22,28,.97); border:1px solid var(--line); color:var(--txt-dim); font:600 12.5px var(--sans); letter-spacing:.2px; box-shadow:0 14px 34px rgba(0,0,0,.55); opacity:0; pointer-events:none; transition:opacity .2s var(--ease), transform .2s var(--ease); }}
+        #holdhint.show {{ opacity:1; transform:translateX(-50%) translateY(0); }}
+        #holdhint::before {{ content:""; width:13px; height:13px; border-radius:50%; border:2px solid var(--accent); border-right-color:transparent; animation:spin .9s linear infinite; }}
     </style>
     <script>
         window.setConn = function(state, ms) {{
@@ -236,6 +240,15 @@ $script:HtmlTemplates = @{
                 else if (state === 'slow') {{ pill.textContent = 'SLOW'; pill.className = 'status st-slow'; }}
                 else {{ pill.textContent = 'OFFLINE'; pill.className = 'status st-lost'; }}
             }}
+        }};
+        window.showHoldHint = function(msg) {{
+            var el = document.getElementById('holdhint');
+            if (!el) return;
+            el.textContent = msg || 'Press and hold to confirm';
+            el.classList.add('show');
+            if (navigator.vibrate) navigator.vibrate(12);
+            clearTimeout(el._t);
+            el._t = setTimeout(function() {{ el.classList.remove('show'); }}, 1500);
         }};
         window.startPolling = function(expectedStatusArray, redirectUrl, opts) {{
             opts = opts || {{}};
@@ -323,6 +336,7 @@ $script:HtmlTemplates = @{
         <h2>Connection Lost</h2>
         <p>The connection looks unstable. Reconnecting&hellip;<br>The presentation will not be interrupted.</p>
     </div>
+    <div id="holdhint"></div>
     <div class="container">
 "@
 
@@ -345,7 +359,7 @@ $script:HtmlTemplates = @{
                 </div>
                 <div class="lock-other" id="lockOther" hidden>
                     <span>This presentation is being controlled by another device.</span>
-                    <button class="steal-btn hold" id="stealBtn" type="button" data-hold="1500" style="--chg-edge:#ffbb38;--chg-glow:rgba(245,166,35,.9)">Hold to take control</button>
+                    <button class="steal-btn hold" id="stealBtn" type="button" data-hold="1500" data-hint="Press and hold to take control" style="--chg-edge:#ffbb38;--chg-glow:rgba(245,166,35,.9)">Hold to take control</button>
                 </div>
                 <div class="slidepad" id="pad">
                     <button class="slide-btn nav" data-cmd="prev"  disabled aria-label="Previous">&#9664;</button>
@@ -356,7 +370,7 @@ $script:HtmlTemplates = @{
                     <button class="slide-btn blk" data-cmd="whiteout" disabled>&#9633; White</button>
                 </div>
                 <form method="post" action="/stop" class="now-actions" id="stopForm">
-                    <button class="ctl-btn danger hold" type="button" id="stopBtn" data-hold="1500" style="--chg-edge:#ff6b6d;--chg-glow:rgba(255,77,79,.9)">&#9632; Hold to Stop</button>
+                    <button class="ctl-btn danger hold" type="button" id="stopBtn" data-hold="1500" data-hint="Press and hold to stop" style="--chg-edge:#ff6b6d;--chg-glow:rgba(255,77,79,.9)">&#9632; Hold to Stop</button>
                 </form>
             </div>
         </div>
@@ -440,21 +454,22 @@ $script:HtmlTemplates = @{
         var stealBtn=document.getElementById('stealBtn'), stopBtn=document.getElementById('stopBtn'), stopForm=document.getElementById('stopForm');
         var container=document.querySelector('.container');
         var blkBtn=pad.querySelector('[data-cmd="blackout"]'), whtBtn=pad.querySelector('[data-cmd="whiteout"]');
-        var baseMs=0, baseAt=performance.now(), seeded=false, lastT='', armed=false, lockOn=false;
+        var baseMs=0, baseAt=performance.now(), seeded=false, lastT='', armed=false, lockOn=false, curPos=0, curTotal=0, curAtEnd=false;
 
         function post(u){ return fetch(u, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'cid='+encodeURIComponent(cid) }).then(function(r){ return r.json(); }); }
         function buzz(p){ if (navigator.vibrate) { try { navigator.vibrate(p); } catch(e){} } }
 
         function paint(){ var t=baseMs+(performance.now()-baseAt); if(t<0)t=0; var s=Math.floor(t/1000); var m=String(Math.floor(s/60)).padStart(2,'0'); var x=String(s%60).padStart(2,'0'); var v=m+':'+x; if(el&&v!==lastT){el.textContent=v;lastT=v;} if(dot)dot.style.opacity=(t%1000)<500?'1':'0.25'; requestAnimationFrame(paint); }
-        function setArmed(on){ armed=on; for(var i=0;i<btns.length;i++)btns[i].disabled=!on; if(container)container.classList.toggle('armed',on); }
+        function applyBounds(){ if(!armed)return; var nb=pad.querySelector('[data-cmd="next"]'), pb=pad.querySelector('[data-cmd="prev"]'); if(nb)nb.disabled=!!curAtEnd; if(pb)pb.disabled=(curTotal>0&&curPos<=1); }
+        function setArmed(on){ armed=on; for(var i=0;i<btns.length;i++)btns[i].disabled=!on; if(container)container.classList.toggle('armed',on); applyBounds(); }
         function setProj(b,w){ if(blkBtn)blkBtn.classList.toggle('act',!!b); if(whtBtn)whtBtn.classList.toggle('act',!!w); }
         function renderLock(st){ lockOn=!!st.lock; var mine=!!st.mine; lockSw.classList.toggle('on',mine); lockSw.setAttribute('aria-checked',mine?'true':'false');
             if(mine){ lockLbl.textContent='YOU HAVE CONTROL'; lockLbl.style.color='var(--accent)'; lockOther.hidden=true; setArmed(true); }
             else if(lockOn){ lockLbl.textContent='LOCKED BY ANOTHER'; lockLbl.style.color='var(--standby)'; lockOther.hidden=false; setArmed(false); }
             else { lockLbl.textContent='REMOTE CONTROL LOCK'; lockLbl.style.color=''; lockOther.hidden=true; setArmed(false); }
             setProj(st.black,st.white); }
-        function pollState(){ fetch('/slide/state?cid='+encodeURIComponent(cid)+'&t='+Date.now()).then(function(r){return r.json();}).then(function(st){ var pred=baseMs+(performance.now()-baseAt); if(!seeded||Math.abs(st.ms-pred)>1000){baseMs=st.ms;baseAt=performance.now();seeded=true;} if(st.total>0&&posEl)posEl.textContent=st.pos+' / '+st.total; renderLock(st); }).catch(function(){}); }
-        function sendSlide(cmd){ if(!armed)return; var hb=pad.querySelector('[data-cmd="'+cmd+'"]'); if(hb){ hb.classList.add('hit'); setTimeout(function(){ hb.classList.remove('hit'); },200); } buzz(12); post('/slide/'+cmd).then(function(res){ if(!res)return; if(res.locked){setArmed(false);pollState();return;} if(res.total>0&&posEl)posEl.textContent=res.pos+' / '+res.total; setProj(res.black,res.white); }); }
+        function pollState(){ fetch('/slide/state?cid='+encodeURIComponent(cid)+'&t='+Date.now()).then(function(r){return r.json();}).then(function(st){ var pred=baseMs+(performance.now()-baseAt); if(!seeded||Math.abs(st.ms-pred)>1000){baseMs=st.ms;baseAt=performance.now();seeded=true;} curPos=st.pos; curTotal=st.total; curAtEnd=!!st.atEnd; if(st.total>0&&posEl)posEl.textContent=Math.min(st.pos,st.total)+' / '+st.total; renderLock(st); }).catch(function(){}); }
+        function sendSlide(cmd){ if(!armed)return; var hb=pad.querySelector('[data-cmd="'+cmd+'"]'); if(hb){ hb.classList.add('hit'); setTimeout(function(){ hb.classList.remove('hit'); },200); } buzz(12); post('/slide/'+cmd).then(function(res){ if(!res)return; if(res.locked){setArmed(false);pollState();return;} curPos=res.pos; curTotal=res.total; curAtEnd=!!res.atEnd; if(res.total>0&&posEl)posEl.textContent=Math.min(res.pos,res.total)+' / '+res.total; setProj(res.black,res.white); applyBounds(); }); }
         for(var i=0;i<btns.length;i++){ (function(b){ b.addEventListener('click',function(){ sendSlide(b.getAttribute('data-cmd')); }); })(btns[i]); }
 
         document.addEventListener('keydown',function(e){ if(!armed)return; var k=e.key;
@@ -470,16 +485,18 @@ $script:HtmlTemplates = @{
         lockSw.addEventListener('keydown',function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggleLock(); } });
 
         function bindHold(btn,onComplete){
-            var dur=parseInt(btn.getAttribute('data-hold'),10)||1500; var raf=null,t0=0;
+            var dur=parseInt(btn.getAttribute('data-hold'),10)||1500; var raf=null,t0=0,active=false,fired=false;
             function set(p){ btn.style.setProperty('--chgp',p); }
             function frame(now){ var p=Math.min((now-t0)/dur,1); set(p); if(p>=1){ done(); return; } raf=requestAnimationFrame(frame); }
-            function start(e){ if(btn.disabled)return; e.preventDefault(); btn.classList.remove('releasing'); btn.classList.add('charging'); t0=performance.now(); buzz(8); raf=requestAnimationFrame(frame); }
-            function cancel(){ if(raf){cancelAnimationFrame(raf);raf=null;} btn.classList.add('releasing'); set(0); setTimeout(function(){ btn.classList.remove('charging','releasing'); },320); }
-            function done(){ if(raf){cancelAnimationFrame(raf);raf=null;} set(1); buzz([16,26,16]); onComplete(); setTimeout(function(){ btn.classList.add('releasing'); set(0); setTimeout(function(){ btn.classList.remove('charging','releasing'); },320); },110); }
+            function start(e){ if(btn.disabled)return; e.preventDefault(); active=true; fired=false; btn.classList.remove('releasing'); btn.classList.add('charging'); t0=performance.now(); buzz(8); raf=requestAnimationFrame(frame); }
+            function unwind(){ if(raf){cancelAnimationFrame(raf);raf=null;} btn.classList.add('releasing'); set(0); setTimeout(function(){ btn.classList.remove('charging','releasing'); },320); }
+            function up(){ if(!active)return; var held=performance.now()-t0; active=false; unwind(); if(!fired && held<420 && window.showHoldHint){ window.showHoldHint(btn.getAttribute('data-hint')); } }
+            function leave(){ if(!active)return; active=false; unwind(); }
+            function done(){ fired=true; active=false; if(raf){cancelAnimationFrame(raf);raf=null;} set(1); buzz([16,26,16]); onComplete(); setTimeout(function(){ btn.classList.add('releasing'); set(0); setTimeout(function(){ btn.classList.remove('charging','releasing'); },320); },110); }
             btn.addEventListener('pointerdown',start);
-            btn.addEventListener('pointerup',cancel);
-            btn.addEventListener('pointerleave',cancel);
-            btn.addEventListener('pointercancel',cancel);
+            btn.addEventListener('pointerup',up);
+            btn.addEventListener('pointerleave',leave);
+            btn.addEventListener('pointercancel',leave);
         }
         bindHold(stopBtn, function(){ if(stopForm.requestSubmit) stopForm.requestSubmit(); else stopForm.submit(); });
         if(stealBtn) bindHold(stealBtn, function(){ post('/lock/steal').then(pollState); });
@@ -501,7 +518,7 @@ $script:HtmlTemplates = @{
     LobbyView = @"
         <div class="lobby-head">
             <div class="sec-label">Select a deck</div>
-            <p class="lobby-hint">Tap a deck to queue it, or hit GO to start the next one.</p>
+            <p class="lobby-hint">Press and hold a deck to start it, or hold GO for the next one.</p>
         </div>
         {2}
         <div class="footer">
@@ -510,23 +527,23 @@ $script:HtmlTemplates = @{
                     <span class="go-kicker">&#9711; HOLD</span><span class="go-main">Start &middot; {1}</span>
                 </button>
             </form>
-            <form method="post" action="/exit" class="exit-wrap" onsubmit="return confirm('Shut down the system?\nThe presentation running on the PC will also be closed.');">
-                <button class="exit-btn" type="submit" title="Exit System">Exit</button>
+            <form method="post" action="/exit" class="exit-wrap">
+                <button class="exit-btn hold" type="button" data-hold="2000" data-hint="Press and hold to exit" style="--chg-edge:#ff6b6d;--chg-track:rgba(255,77,79,.16);--chg-glow:rgba(255,77,79,.55)" title="Exit System">Exit</button>
             </form>
         </div>
 "@
 
-    # Post-presentation dialog. Format args: {0}=CurrentFileName, {1}=nextBtnAttrs, {2}=nextBtnLabel
+    # Post-presentation dialog. Format args: {0}=CurrentFileName, {1}=nextBtnClassSuffix, {2}=nextBtnAttrs, {3}=nextBtnLabel
     DialogView = @"
         <div class="stage">
             <div class="done-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
             <h2 class="dlg-title">Presentation ended</h2>
             <div class="dlg-name">{0}</div>
             <div class="post-stack">
-                <form method="post" action="/next"><button class="pp-btn pp-next" {1} type="submit">{2}</button></form>
-                <form method="post" action="/retry"><button class="pp-btn pp-retry" type="submit">&#8635; Play Again</button></form>
+                <form method="post" action="/next"><button class="pp-btn pp-next{1}" {2} type="button">{3}</button></form>
+                <form method="post" action="/retry"><button class="pp-btn pp-retry hold" type="button" data-hold="1500" data-hint="Press and hold to replay" style="--chg-edge:#ffbb38;--chg-track:rgba(245,166,35,.2);--chg-glow:rgba(245,166,35,.6)">&#8635; Hold to Play Again</button></form>
                 <form method="post" action="/lobby"><button class="pp-btn pp-lobby" type="submit">Back to List</button></form>
-                <form method="post" action="/exit" onsubmit="return confirm('Shut down the system?\nThe presentation running on the PC will also be closed.');"><button class="pp-btn pp-exit" type="submit">Exit System</button></form>
+                <form method="post" action="/exit"><button class="pp-btn pp-exit hold" type="button" data-hold="2000" data-hint="Press and hold to exit" style="--chg-edge:#ff6b6d;--chg-track:rgba(255,77,79,.18);--chg-glow:rgba(255,77,79,.65)">Hold to Exit System</button></form>
             </div>
         </div>
 "@
@@ -565,22 +582,42 @@ $script:HtmlTemplates = @{
         @keyframes goNeon { 0%,100% { box-shadow:0 0 0 1px rgba(52,210,123,.10), 0 0 16px -10px var(--go); } 50% { box-shadow:0 0 0 1px rgba(52,210,123,.24), 0 0 30px -6px var(--go); } }
         .go-btn.hold::before { opacity:.45; }
         .go-btn.charging::before { opacity:1; }
+        /* Presentation-ended dialog: neon + hold */
+        .done-mark { box-shadow:0 0 26px -6px rgba(52,210,123,.5); }
+        .pp-next { border:1px solid rgba(52,210,123,.5) !important; color:var(--go) !important; background:rgba(52,210,123,.08) !important; box-shadow:0 0 0 1px rgba(52,210,123,.10), 0 0 26px -10px var(--go) !important; text-shadow:0 0 14px rgba(52,210,123,.4); display:flex; flex-direction:row; align-items:center; justify-content:center; gap:11px; }
+        .pp-next .pp-kicker { font:800 10.5px var(--sans); letter-spacing:2px; color:var(--go); background:rgba(52,210,123,.14); border:1px solid rgba(52,210,123,.4); padding:4px 9px; border-radius:8px; white-space:nowrap; }
+        .pp-next .pp-main { display:flex; flex-direction:column; align-items:flex-start; gap:1px; line-height:1.18; text-align:left; }
+        .pp-next .pp-main-t { font:700 14.5px var(--sans); color:var(--go); }
+        .pp-next .pp-main-d { font:500 11px var(--mono); color:rgba(122,230,170,.72); text-shadow:none; overflow-wrap:anywhere; }
+        .pp-next:disabled { opacity:.45; filter:none; box-shadow:none !important; text-shadow:none; }
+        .pp-retry { background:rgba(245,166,35,.07) !important; color:var(--standby) !important; border-color:rgba(245,166,35,.45) !important; box-shadow:0 0 22px -12px rgba(245,166,35,.6); text-shadow:0 0 12px rgba(245,166,35,.3); }
+        .pp-lobby { background:var(--panel-2); color:var(--txt); border-color:var(--line); }
+        .pp-exit { background:transparent; color:var(--txt-faint); border-color:transparent; }
+        .pp-exit:hover { color:#ff8a8c; }
+        .pp-next.hold::before, .pp-retry.hold::before, .pp-exit.hold::before { opacity:.4; }
+        .pp-next.charging::before, .pp-retry.charging::before, .pp-exit.charging::before { opacity:1; }
+        .deck.hold::before { opacity:.32; }
+        .deck.charging::before { opacity:1; }
+        .exit-btn.hold::before { opacity:.32; }
+        .exit-btn.charging::before { opacity:1; }
     </style>
     <script>
     (function(){
         function buzz(p){ if (navigator.vibrate) { try { navigator.vibrate(p); } catch(e){} } }
         function bind(btn){
-            var dur=parseInt(btn.getAttribute('data-hold'),10)||1500; var formId=btn.getAttribute('data-submit'); var raf=null,t0=0;
+            var dur=parseInt(btn.getAttribute('data-hold'),10)||1500; var formId=btn.getAttribute('data-submit'); var raf=null,t0=0,active=false,fired=false;
             function set(p){ btn.style.setProperty('--chgp',p); }
             function frame(now){ var p=Math.min((now-t0)/dur,1); set(p); if(p>=1){ done(); return; } raf=requestAnimationFrame(frame); }
-            function start(e){ if(btn.disabled)return; e.preventDefault(); btn.classList.remove('releasing'); btn.classList.add('charging'); t0=performance.now(); buzz(8); raf=requestAnimationFrame(frame); }
-            function cancel(){ if(raf){cancelAnimationFrame(raf);raf=null;} btn.classList.add('releasing'); set(0); setTimeout(function(){ btn.classList.remove('charging','releasing'); },320); }
+            function start(e){ if(btn.disabled)return; e.preventDefault(); active=true; fired=false; btn.classList.remove('releasing'); btn.classList.add('charging'); t0=performance.now(); buzz(8); raf=requestAnimationFrame(frame); }
+            function unwind(){ if(raf){cancelAnimationFrame(raf);raf=null;} btn.classList.add('releasing'); set(0); setTimeout(function(){ btn.classList.remove('charging','releasing'); },320); }
+            function up(){ if(!active)return; var held=performance.now()-t0; active=false; unwind(); if(!fired && held<420 && window.showHoldHint){ window.showHoldHint(btn.getAttribute('data-hint')); } }
+            function leave(){ if(!active)return; active=false; unwind(); }
             function fire(){ var f=formId?document.getElementById(formId):btn.closest('form'); if(f){ if(f.requestSubmit) f.requestSubmit(); else f.submit(); } }
-            function done(){ if(raf){cancelAnimationFrame(raf);raf=null;} set(1); buzz([16,26,16]); fire(); setTimeout(function(){ btn.classList.add('releasing'); set(0); setTimeout(function(){ btn.classList.remove('charging','releasing'); },320); },110); }
+            function done(){ fired=true; active=false; if(raf){cancelAnimationFrame(raf);raf=null;} set(1); buzz([16,26,16]); fire(); setTimeout(function(){ btn.classList.add('releasing'); set(0); setTimeout(function(){ btn.classList.remove('charging','releasing'); },320); },110); }
             btn.addEventListener('pointerdown',start);
-            btn.addEventListener('pointerup',cancel);
-            btn.addEventListener('pointerleave',cancel);
-            btn.addEventListener('pointercancel',cancel);
+            btn.addEventListener('pointerup',up);
+            btn.addEventListener('pointerleave',leave);
+            btn.addEventListener('pointercancel',leave);
         }
         var list=document.querySelectorAll('[data-hold]');
         for(var i=0;i<list.length;i++){ bind(list[i]); }
