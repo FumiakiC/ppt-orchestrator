@@ -472,8 +472,8 @@ $script:HtmlTemplates = @{
         function sendSlide(cmd){ if(!armed)return; var hb=pad.querySelector('[data-cmd="'+cmd+'"]'); if(hb){ hb.classList.add('hit'); setTimeout(function(){ hb.classList.remove('hit'); },200); } buzz(12); post('/slide/'+cmd).then(function(res){ if(!res)return; if(res.locked){setArmed(false);pollState();return;} curPos=res.pos; curTotal=res.total; curAtEnd=!!res.atEnd; if(res.total>0&&posEl)posEl.textContent=Math.min(res.pos,res.total)+' / '+res.total; setProj(res.black,res.white); applyBounds(); }); }
         for(var i=0;i<btns.length;i++){ (function(b){ b.addEventListener('click',function(){ sendSlide(b.getAttribute('data-cmd')); }); })(btns[i]); }
 
-        document.addEventListener('keydown',function(e){ if(!armed)return; var k=e.key;
-            if(k==='ArrowRight'||k==='PageDown'||k===' '||k==='Spacebar'){ e.preventDefault(); sendSlide('next'); }
+        document.addEventListener('keydown',function(e){ if(e.key===' '||e.key==='Spacebar'){ e.preventDefault(); return; } if(!armed)return; var k=e.key;
+            if(k==='ArrowRight'||k==='PageDown'){ e.preventDefault(); sendSlide('next'); }
             else if(k==='ArrowLeft'||k==='PageUp'){ e.preventDefault(); sendSlide('prev'); }
             else if(k==='Home'){ e.preventDefault(); sendSlide('first'); }
             else if(k==='End'){ e.preventDefault(); sendSlide('last'); }
@@ -482,7 +482,7 @@ $script:HtmlTemplates = @{
 
         function toggleLock(){ if(armed) post('/lock/off').then(pollState); else if(!lockOn) post('/lock/on').then(function(){pollState();}); else pollState(); }
         lockSw.addEventListener('click',toggleLock);
-        lockSw.addEventListener('keydown',function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggleLock(); } });
+        lockSw.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); toggleLock(); } });
 
         function bindHold(btn,onComplete){
             var dur=parseInt(btn.getAttribute('data-hold'),10)||1500; var raf=null,t0=0,active=false,fired=false;
