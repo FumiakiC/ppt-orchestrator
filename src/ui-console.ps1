@@ -206,6 +206,15 @@ function Get-UserAction {
             $shutdownDeadline = $webResult.ShutdownDeadline
         }
 
+        # Webリスナー未起動/停止時のフロアスリープ。ContextTaskが$nullのとき
+        # .Wait(100)が効かずビジーループ化しCPUを焼くのを防止。生存時は再アーム。
+        if (-not $script:ContextTask) {
+            Start-Sleep -Milliseconds 100
+            if ($Listener -and $Listener.IsListening) {
+                $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+            }
+        }
+
         # --- コンソール確認 ---
         if ((!$shuttingDown) -and ($resultAction -eq $null) -and [Console]::KeyAvailable) {
             $keyInfo = [Console]::ReadKey($true)

@@ -355,7 +355,7 @@ $script:HtmlTemplates = @{
             <div class="np-controls">
                 <div class="lockbar" id="lockbar">
                     <div class="lbl" id="lockLbl">REMOTE CONTROL LOCK</div>
-                    <div class="switch" id="lockSwitch" role="switch" aria-checked="false" tabindex="0"><i></i></div>
+                    <div class="switch" id="lockSwitch" role="switch" aria-checked="false" aria-labelledby="lockLbl" tabindex="0"><i></i></div>
                 </div>
                 <div class="lock-other" id="lockOther" hidden>
                     <span>This presentation is being controlled by another device.</span>
@@ -456,7 +456,7 @@ $script:HtmlTemplates = @{
         var blkBtn=pad.querySelector('[data-cmd="blackout"]'), whtBtn=pad.querySelector('[data-cmd="whiteout"]');
         var baseMs=0, baseAt=performance.now(), seeded=false, lastT='', armed=false, lockOn=false, curPos=0, curTotal=0, curAtEnd=false;
 
-        function post(u){ return fetch(u, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'cid='+encodeURIComponent(cid) }).then(function(r){ return r.json(); }); }
+        function post(u){ return fetch(u, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'cid='+encodeURIComponent(cid) }).then(function(r){ if(r.status===401){ window.location.href='/'; return null; } if(!r.ok) return null; return r.json().catch(function(){ return null; }); }).catch(function(){ return null; }); }
         function buzz(p){ if (navigator.vibrate) { try { navigator.vibrate(p); } catch(e){} } }
 
         function paint(){ var t=baseMs+(performance.now()-baseAt); if(t<0)t=0; var s=Math.floor(t/1000); var m=String(Math.floor(s/60)).padStart(2,'0'); var x=String(s%60).padStart(2,'0'); var v=m+':'+x; if(el&&v!==lastT){el.textContent=v;lastT=v;} if(dot)dot.style.opacity=(t%1000)<500?'1':'0.25'; requestAnimationFrame(paint); }
@@ -468,7 +468,7 @@ $script:HtmlTemplates = @{
             else if(lockOn){ lockLbl.textContent='LOCKED BY ANOTHER'; lockLbl.style.color='var(--standby)'; lockOther.hidden=false; setArmed(false); }
             else { lockLbl.textContent='REMOTE CONTROL LOCK'; lockLbl.style.color=''; lockOther.hidden=true; setArmed(false); }
             setProj(st.black,st.white); }
-        function pollState(){ fetch('/slide/state?cid='+encodeURIComponent(cid)+'&t='+Date.now()).then(function(r){return r.json();}).then(function(st){ var pred=baseMs+(performance.now()-baseAt); if(!seeded||Math.abs(st.ms-pred)>1000){baseMs=st.ms;baseAt=performance.now();seeded=true;} curPos=st.pos; curTotal=st.total; curAtEnd=!!st.atEnd; if(st.total>0&&posEl)posEl.textContent=Math.min(st.pos,st.total)+' / '+st.total; renderLock(st); }).catch(function(){}); }
+        function pollState(){ fetch('/slide/state?cid='+encodeURIComponent(cid)+'&t='+Date.now()).then(function(r){ if(r.status===401){ window.location.href='/'; return null; } return r.json(); }).then(function(st){ if(!st)return; var pred=baseMs+(performance.now()-baseAt); if(!seeded||Math.abs(st.ms-pred)>1000){baseMs=st.ms;baseAt=performance.now();seeded=true;} curPos=st.pos; curTotal=st.total; curAtEnd=!!st.atEnd; if(st.total>0&&posEl)posEl.textContent=Math.min(st.pos,st.total)+' / '+st.total; renderLock(st); }).catch(function(){}); }
         function sendSlide(cmd){ if(!armed)return; var hb=pad.querySelector('[data-cmd="'+cmd+'"]'); if(hb){ hb.classList.add('hit'); setTimeout(function(){ hb.classList.remove('hit'); },200); } buzz(12); post('/slide/'+cmd).then(function(res){ if(!res)return; if(res.locked){setArmed(false);pollState();return;} curPos=res.pos; curTotal=res.total; curAtEnd=!!res.atEnd; if(res.total>0&&posEl)posEl.textContent=Math.min(res.pos,res.total)+' / '+res.total; setProj(res.black,res.white); applyBounds(); }); }
         for(var i=0;i<btns.length;i++){ (function(b){ b.addEventListener('click',function(){ sendSlide(b.getAttribute('data-cmd')); }); })(btns[i]); }
 
@@ -498,7 +498,7 @@ $script:HtmlTemplates = @{
             btn.addEventListener('pointerleave',leave);
             btn.addEventListener('pointercancel',leave);
         }
-        bindHold(stopBtn, function(){ if(stopForm.requestSubmit) stopForm.requestSubmit(); else stopForm.submit(); });
+        bindHold(stopBtn, function(){ if(stopForm.requestSubmit){ stopForm.requestSubmit(); } else { var ev=new Event('submit',{bubbles:true,cancelable:true}); if(stopForm.dispatchEvent(ev)) stopForm.submit(); } });
         if(stealBtn) bindHold(stealBtn, function(){ post('/lock/steal').then(pollState); });
 
         var wl=null;
@@ -612,7 +612,7 @@ $script:HtmlTemplates = @{
             function unwind(){ if(raf){cancelAnimationFrame(raf);raf=null;} btn.classList.add('releasing'); set(0); setTimeout(function(){ btn.classList.remove('charging','releasing'); },320); }
             function up(){ if(!active)return; var held=performance.now()-t0; active=false; unwind(); if(!fired && held<420 && window.showHoldHint){ window.showHoldHint(btn.getAttribute('data-hint')); } }
             function leave(){ if(!active)return; active=false; unwind(); }
-            function fire(){ var f=formId?document.getElementById(formId):btn.closest('form'); if(f){ if(f.requestSubmit) f.requestSubmit(); else f.submit(); } }
+            function fire(){ var f=formId?document.getElementById(formId):btn.closest('form'); if(f){ if(f.requestSubmit){ f.requestSubmit(); } else { var ev=new Event('submit',{bubbles:true,cancelable:true}); if(f.dispatchEvent(ev)) f.submit(); } } }
             function done(){ fired=true; active=false; if(raf){cancelAnimationFrame(raf);raf=null;} set(1); buzz([16,26,16]); fire(); setTimeout(function(){ btn.classList.add('releasing'); set(0); setTimeout(function(){ btn.classList.remove('charging','releasing'); },320); },110); }
             btn.addEventListener('pointerdown',start);
             btn.addEventListener('pointerup',up);

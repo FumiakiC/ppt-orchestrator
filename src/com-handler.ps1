@@ -60,8 +60,15 @@ function Watch-RunningPresentation {
                 $isAuthenticated = Test-IsAuthenticated -Request $req
 
                 if (-not $isAuthenticated -and $path -ne "/status" -and $path -ne "/auth") {
-                    $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", ""
-                    Send-HttpResponse -Response $res -Content $authHtml
+                    if ($path -like '/slide/*' -or $path -like '/lock/*') {
+                        # XHRで叩くAPIには401を返し、クライアント側で再認証へ誘導する
+                        try { $res.StatusCode = 401 } catch {}
+                        Send-HttpResponse -Response $res -Content '{"ok":false,"auth":false}' -ContentType "application/json; charset=utf-8"
+                    } else {
+                        # 通常のページ遷移には従来どおり認証ページ(200)を返す
+                        $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", ""
+                        Send-HttpResponse -Response $res -Content $authHtml
+                    }
                     $script:ContextTask = Get-SafeContextAsync -Listener $Listener
                     continue
                 }
@@ -253,6 +260,15 @@ function Watch-RunningPresentation {
                 }
 
                 $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+            }
+
+            # Webリスナー未起動/停止時のフロアスリープ。ContextTaskが$nullのとき
+            # .Wait(100)が効かずビジーループ化しCPUを焼くのを防止。生存時は再アーム。
+            if (-not $script:ContextTask) {
+                Start-Sleep -Milliseconds 100
+                if ($Listener -and $Listener.IsListening) {
+                    $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+                }
             }
 
             # 2. PowerPointの状態確認
