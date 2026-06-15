@@ -1,4 +1,4 @@
-﻿function Get-UserAction {
+function Get-UserAction {
     param (
         [string]$Mode,
         [string]$CurrentFileName = "",
@@ -135,25 +135,33 @@
         foreach ($f in $ActiveFiles) {
             $idx++
             $fname = [System.Web.HttpUtility]::HtmlEncode($f.Name)
-            $listHtml += "<form method='post' action='/select' class='deck-form'><input type='hidden' name='filename' value='$fname'><button type='submit' class='deck'><span class='deck-badge'>$idx</span><span class='deck-name'>$fname</span><span class='deck-cue'>&#9654;</span></button></form>"
+            $listHtml += "<form method='post' action='/select' class='deck-form'><input type='hidden' name='filename' value='$fname'><button type='button' class='deck hold' data-hold='1500' data-hint='Press and hold to start this deck' style='--chg-edge:#f5a623;--chg-track:rgba(245,166,35,.18);--chg-glow:rgba(245,166,35,.55)'><span class='deck-badge'>$idx</span><span class='deck-name'>$fname</span><span class='deck-cue'>&#9654;</span></button></form>"
         }
         $listHtml += "<div class='sec'><span class='tag tag-done'>DONE</span> Completed</div>"
         if (!$FinishedFiles) { $listHtml += "<div class='empty'>None yet.</div>" }
         foreach ($f in $FinishedFiles) {
             $fname = [System.Web.HttpUtility]::HtmlEncode($f.Name)
-            $listHtml += "<form method='post' action='/select' class='deck-form'><input type='hidden' name='filename' value='$fname'><button type='submit' class='deck finished'><span class='deck-badge'>&#10003;</span><span class='deck-name'>$fname</span></button></form>"
+            $listHtml += "<form method='post' action='/select' class='deck-form'><input type='hidden' name='filename' value='$fname'><button type='button' class='deck finished hold' data-hold='1500' data-hint='Press and hold to start this deck' style='--chg-edge:#5af0a0;--chg-track:rgba(52,210,123,.18);--chg-glow:rgba(52,210,123,.5)'><span class='deck-badge'>&#10003;</span><span class='deck-name'>$fname</span></button></form>"
         }
         $listHtml += "</div>"
 
         $bodyContent = $script:HtmlTemplates.LobbyView -f $stBtn, $nextTxt, $listHtml
     } else {
-        $nxtLbl = if ($NextFileName) { "Start Next Slide<br><span style='font-size:0.8rem;font-weight:normal'>$([System.Web.HttpUtility]::HtmlEncode($NextFileName))</span>" } else { "No slides in queue" }
-        $nxtSt  = if ($NextFileName) { "" } else { "disabled style='opacity:0.5;'" }
+        if ($NextFileName) {
+            $encNext = [System.Web.HttpUtility]::HtmlEncode($NextFileName)
+            $nxtCls  = " hold"
+            $nxtSt   = "data-hold='1500' data-hint='Press and hold to start next' style='--chg-edge:#5af0a0;--chg-track:rgba(52,210,123,.22);--chg-glow:rgba(52,210,123,.7)'"
+            $nxtLbl  = "<span class='pp-kicker'>&#9711; HOLD</span><span class='pp-main'><span class='pp-main-t'>Start Next</span><span class='pp-main-d'>$encNext</span></span>"
+        } else {
+            $nxtCls  = ""
+            $nxtSt   = "disabled"
+            $nxtLbl  = "No slides in queue"
+        }
 
-        $bodyContent = $script:HtmlTemplates.DialogView -f ([System.Web.HttpUtility]::HtmlEncode($CurrentFileName)), $nxtSt, $nxtLbl
+        $bodyContent = $script:HtmlTemplates.DialogView -f ([System.Web.HttpUtility]::HtmlEncode($CurrentFileName)), $nxtCls, $nxtSt, $nxtLbl
     }
 
-    $mainHtml       = $head + $bodyContent + $script:HtmlTemplates.PollingScript + "</div></body></html>"
+    $mainHtml       = $head + $bodyContent + $script:HtmlTemplates.HoldToConfirmScript + $script:HtmlTemplates.PollingScript + "</div></body></html>"
     $processingHtml = $head + $script:HtmlTemplates.ProcessingView
     $exitHtml       = $head + $script:HtmlTemplates.ExitView
 
@@ -196,6 +204,15 @@
             if ($webResult.ActionSetTime -ne $null) { $actionSetTime   = $webResult.ActionSetTime }
             $shuttingDown    = $webResult.ShuttingDown
             $shutdownDeadline = $webResult.ShutdownDeadline
+        }
+
+        # Webリスナー未起動/停止時のフロアスリープ。ContextTaskが$nullのとき
+        # .Wait(100)が効かずビジーループ化しCPUを焼くのを防止。生存時は再アーム。
+        if (-not $script:ContextTask) {
+            Start-Sleep -Milliseconds 100
+            if ($Listener -and $Listener.IsListening) {
+                $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+            }
         }
 
         # --- コンソール確認 ---

@@ -193,8 +193,8 @@ $script:HtmlTemplates = @{
         @media (min-width: 760px) {{
             .container {{
                 max-width: 960px; width: 100%;
-                flex: 0 1 auto; margin: auto; height: auto; min-height: 0;
-                max-height: min(820px, calc(100dvh - 80px));
+                flex: 0 1 auto; margin: auto; height: min(680px, calc(100dvh - 96px)); min-height: 0;
+                max-height: none;
                 border: 1px solid var(--line); border-radius: 22px;
                 background: linear-gradient(180deg, rgba(23,27,32,.55), rgba(18,21,25,.30));
                 box-shadow: 0 30px 90px rgba(0,0,0,.5);
@@ -211,11 +211,45 @@ $script:HtmlTemplates = @{
             .stage {{ min-height: min(460px, calc(100dvh - 120px)); }}
         }}
         @media (min-width: 1200px) {{
-            .container {{ max-width: 1180px; max-height: min(860px, calc(100dvh - 80px)); }}
+            .container {{ max-width: 1180px; height: min(720px, calc(100dvh - 96px)); max-height: none; }}
             .list-scroll {{ grid-template-columns: repeat(3, minmax(0,1fr)); }}
         }}
+        /* connection status indicator */
+        .brand {{ line-height: 1; }}
+        .brand .dot {{ transition: background .3s, box-shadow .3s, opacity .3s; }}
+        .brand .dot.conn-ok   {{ background: var(--go);        box-shadow: 0 0 0 3px var(--go-glow);       animation: connOk 2.6s var(--ease) infinite; }}
+        .brand .dot.conn-slow {{ background: var(--standby);   box-shadow: 0 0 0 3px rgba(245,166,35,.32); animation: connBlink 1.1s ease-in-out infinite; }}
+        .brand .dot.conn-lost {{ background: var(--live);      box-shadow: 0 0 0 3px rgba(255,77,79,.38);  animation: connBlink .6s ease-in-out infinite; }}
+        .brand .dot.conn-init {{ background: var(--txt-faint); box-shadow: none; animation: none; }}
+        @keyframes connOk {{ 0%,100% {{ opacity: 1; }} 50% {{ opacity: .5; }} }}
+        @keyframes connBlink {{ 0%,100% {{ opacity: 1; }} 50% {{ opacity: .2; }} }}
+        .topbar .status.st-slow {{ color: var(--standby); border-color: rgba(245,166,35,.45); }}
+        .topbar .status.st-lost {{ color: var(--live); border-color: rgba(255,77,79,.5); }}
+        /* quick-tap hint (長押しを促すポップ) */
+        #holdhint {{ position:fixed; left:50%; bottom:46px; transform:translateX(-50%) translateY(10px); z-index:9300; display:flex; align-items:center; gap:8px; padding:9px 16px 9px 13px; border-radius:999px; background:rgba(18,22,28,.97); border:1px solid var(--line); color:var(--txt-dim); font:600 12.5px var(--sans); letter-spacing:.2px; box-shadow:0 14px 34px rgba(0,0,0,.55); opacity:0; pointer-events:none; transition:opacity .2s var(--ease), transform .2s var(--ease); }}
+        #holdhint.show {{ opacity:1; transform:translateX(-50%) translateY(0); }}
+        #holdhint::before {{ content:""; width:13px; height:13px; border-radius:50%; border:2px solid var(--accent); border-right-color:transparent; animation:spin .9s linear infinite; }}
     </style>
     <script>
+        window.setConn = function(state, ms) {{
+            var d = document.getElementById('connDot');
+            var pill = document.getElementById('statusPill');
+            if (d) {{ d.className = 'dot conn-' + state; d.title = (state === 'lost') ? 'no connection' : ('ping ' + ms + ' ms'); }}
+            if (pill) {{
+                if (state === 'ok') {{ pill.textContent = 'LIVE'; pill.className = 'status'; }}
+                else if (state === 'slow') {{ pill.textContent = 'SLOW'; pill.className = 'status st-slow'; }}
+                else {{ pill.textContent = 'OFFLINE'; pill.className = 'status st-lost'; }}
+            }}
+        }};
+        window.showHoldHint = function(msg) {{
+            var el = document.getElementById('holdhint');
+            if (!el) return;
+            el.textContent = msg || 'Press and hold to confirm';
+            el.classList.add('show');
+            if (navigator.vibrate) navigator.vibrate(12);
+            clearTimeout(el._t);
+            el._t = setTimeout(function() {{ el.classList.remove('show'); }}, 1500);
+        }};
         window.startPolling = function(expectedStatusArray, redirectUrl, opts) {{
             opts = opts || {{}};
             var overlay = document.getElementById('offline-overlay');
@@ -232,6 +266,7 @@ $script:HtmlTemplates = @{
 
             function pollStatus() {{
                 if (!isPolling) return;
+                var __t0 = Date.now();
                 var showOverlayTimer = setTimeout(function() {{
                     if (overlay) overlay.classList.add('active');
                 }}, 3000);
@@ -240,6 +275,8 @@ $script:HtmlTemplates = @{
                 .then(function(r) {{
                     clearTimeout(showOverlayTimer);
                     if (overlay) overlay.classList.remove('active');
+                    var __ms = Date.now() - __t0;
+                    if (window.setConn) window.setConn(__ms > 600 ? 'slow' : 'ok', __ms);
                     return r.text();
                 }})
                 .then(function(status) {{
@@ -262,6 +299,7 @@ $script:HtmlTemplates = @{
                 .catch(function(e) {{
                     clearTimeout(showOverlayTimer);
                     if (overlay) overlay.classList.add('active');
+                    if (window.setConn) window.setConn('lost');
                     currentDelay = Math.min(currentDelay * backoffMultiplier, maxDelay);
                     checkCount++;
                     errorCount++;
@@ -290,102 +328,222 @@ $script:HtmlTemplates = @{
 </head>
 <body>
     <div class="topbar">
-        <span class="brand"><span class="dot"></span>ppt-orchestrator</span>
-        <span class="status">LIVE</span>
+        <span class="brand"><span class="dot conn-ok" id="connDot"></span><span class="brand-txt">ppt-orchestrator</span></span>
+        <span class="status" id="statusPill">LIVE</span>
     </div>
     <div id="offline-overlay">
         <div class="offline-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
         <h2>Connection Lost</h2>
         <p>The connection looks unstable. Reconnecting&hellip;<br>The presentation will not be interrupted.</p>
     </div>
+    <div id="holdhint"></div>
     <div class="container">
 "@
 
-    # Now Presenting view. Format args: {0}=FileName
+    # Now Presenting view (remote control). Injected via .Replace on %%DECK%% (single braces; NOT -f).
     NowPlayingView = @"
-    <div class="stage">
-        <div class="onair"><i></i> ON AIR</div>
-        <div class="now-name">{0}</div>
-        <div class="now-sub">Controlling slides on the host PC</div>
-        <div class="now-timer" id="elapsed">00:00</div>
-        <form method="post" action="/stop" class="now-actions">
-            <button class="ctl-btn danger" type="submit">&#9632; Stop Presentation</button>
-        </form>
+    <div class="stage np">
+        <div class="npgrid">
+            <div class="np-monitor">
+                <div class="onair"><i></i> ON AIR</div>
+                <div class="now-name">%%DECK%%</div>
+                <div class="now-sub">Remote slide control</div>
+                <div class="now-timer" id="elapsed">00:00</div>
+                <div class="pos" id="pos">&mdash; / &mdash;</div>
+            </div>
+            <div class="np-divider"></div>
+            <div class="np-controls">
+                <div class="lockbar" id="lockbar">
+                    <div class="lbl" id="lockLbl">REMOTE CONTROL LOCK</div>
+                    <div class="switch" id="lockSwitch" role="switch" aria-checked="false" aria-labelledby="lockLbl" tabindex="0"><i></i></div>
+                </div>
+                <div class="lock-other" id="lockOther" hidden>
+                    <span>This presentation is being controlled by another device.</span>
+                    <button class="steal-btn hold" id="stealBtn" type="button" data-hold="1500" data-hint="Press and hold to take control" style="--chg-edge:#ffbb38;--chg-glow:rgba(245,166,35,.9)">Hold to take control</button>
+                </div>
+                <div class="slidepad" id="pad">
+                    <button class="slide-btn nav" data-cmd="prev"  disabled aria-label="Previous">&#9664;</button>
+                    <button class="slide-btn nav" data-cmd="next"  disabled aria-label="Next">&#9654;</button>
+                    <button class="slide-btn"     data-cmd="first" disabled>&#9198; First</button>
+                    <button class="slide-btn"     data-cmd="last"  disabled>Last &#9197;</button>
+                    <button class="slide-btn blk" data-cmd="blackout" disabled>&#9632; Black</button>
+                    <button class="slide-btn blk" data-cmd="whiteout" disabled>&#9633; White</button>
+                </div>
+                <form method="post" action="/stop" class="now-actions" id="stopForm">
+                    <button class="ctl-btn danger hold" type="button" id="stopBtn" data-hold="1500" data-hint="Press and hold to stop" style="--chg-edge:#ff6b6d;--chg-glow:rgba(255,77,79,.9)">&#9632; Hold to Stop</button>
+                </form>
+            </div>
+        </div>
     </div>
+    <style>
+        @property --chgp { syntax:"<number>"; inherits:false; initial-value:0; }
+
+        .np .pos { font:600 14px var(--mono); color:var(--txt-dim); letter-spacing:3px; margin-top:6px; }
+
+        .stage.np { padding:0; align-items:stretch; justify-content:stretch; }
+        .np .npgrid { display:grid; grid-template-columns:1fr 1px 1fr; width:100%; flex:1; min-height:0; }
+        .np .np-divider { background:linear-gradient(180deg, transparent, var(--line) 16%, var(--line) 84%, transparent); }
+        .np .np-monitor { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; padding:36px; text-align:center; }
+        .np .np-controls { display:flex; flex-direction:column; justify-content:center; gap:16px; padding:36px; width:100%; max-width:540px; margin:0 auto; }
+        .np .onair { margin:0; }
+        .np .now-name { font-size:1.45rem; margin:20px 0 4px; }
+        .np .now-sub { margin-top:2px; }
+        .np .now-timer { font-size:58px; margin:22px 0 2px; }
+
+        .np .lockbar { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; padding:12px 14px 12px 16px; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--panel); }
+        .np .lockbar .lbl { font:700 11px/1 var(--mono); letter-spacing:1.6px; color:var(--txt-dim); transition:color .16s; }
+        .np .switch { width:50px; height:28px; border-radius:999px; background:var(--bg-2); border:1px solid var(--line); position:relative; cursor:pointer; transition:.18s var(--ease); flex:0 0 auto; }
+        .np .switch i { position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:var(--txt-faint); transition:.18s var(--ease); }
+        .np .switch.on { background:rgba(90,169,255,.22); border-color:rgba(90,169,255,.6); }
+        .np .switch.on i { left:25px; background:var(--accent); box-shadow:0 0 8px rgba(90,169,255,.7); }
+
+        .np .lock-other { display:flex; flex-direction:column; align-items:center; gap:10px; width:100%; font:600 12.5px var(--sans); color:var(--standby); line-height:1.45; text-align:center; }
+        .np .steal-btn { width:100%; max-width:300px; padding:11px 18px; border-radius:var(--radius-sm); border:1px solid rgba(245,166,35,.4); background:rgba(245,166,35,.08); color:var(--standby); font:650 13px var(--sans); cursor:pointer; }
+
+        .np .slidepad { display:grid; grid-template-columns:1fr 1fr; gap:12px; width:100%; }
+        .np .slide-btn { border-radius:14px; border:1px solid var(--line); background:var(--panel-2); color:var(--txt); font:600 13.5px var(--sans); cursor:pointer; transition:.14s var(--ease); display:flex; align-items:center; justify-content:center; gap:8px; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; padding:14px; }
+        .np .slide-btn.nav { padding:24px; font-size:22px; }
+        .np .slide-btn:not(.nav) { color:var(--txt-dim); background:var(--panel); }
+        .np .slide-btn:not(:disabled):hover { border-color:#34404d; }
+        .np .slide-btn:active:not(:disabled) { transform:scale(.97); }
+        .np .slide-btn:disabled { opacity:.32; cursor:not-allowed; }
+        .np .slide-btn.act { border-color:rgba(90,169,255,.6); color:var(--accent); background:rgba(90,169,255,.10); }
+        .np .slide-btn.hit { border-color:rgba(90,169,255,.7); color:var(--accent); background:rgba(90,169,255,.16); transition:none; }
+
+        .np .now-actions { width:100%; margin:0; max-width:none; }
+        .np .ctl-btn.danger { display:flex; align-items:center; justify-content:center; }
+
+        .hold { position:relative; }
+        .hold::before {
+            content:""; position:absolute; inset:0; border-radius:inherit; padding:3.5px;
+            background:conic-gradient(var(--chg-edge, #fff) 0 calc(var(--chgp, 0) * 1turn), var(--chg-track, rgba(255,255,255,.16)) calc(var(--chgp, 0) * 1turn) 1turn);
+            -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+                    mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            -webkit-mask-composite:xor; mask-composite:exclude;
+            filter:drop-shadow(0 0 4px var(--chg-glow, var(--chg-edge, #fff)));
+            opacity:0; transition:opacity .18s var(--ease); pointer-events:none; z-index:4;
+        }
+        .hold.charging::before { opacity:1; }
+        .hold.charging { filter:brightness(1.04); }
+        .hold.releasing { transition:--chgp .3s var(--ease); }
+
+        .container.armed { border-color:rgba(90,169,255,.38); animation:armGlow 3.2s ease-in-out infinite; }
+        @keyframes armGlow {
+            0%,100% { box-shadow:0 22px 70px rgba(0,0,0,.45), 0 0 0 1px rgba(90,169,255,.20), 0 0 16px -6px rgba(90,169,255,.30); }
+            50%     { box-shadow:0 22px 70px rgba(0,0,0,.45), 0 0 0 1px rgba(90,169,255,.34), 0 0 22px -5px rgba(90,169,255,.44); }
+        }
+
+        @media (max-width:759px) {
+            .np .npgrid { grid-template-columns:1fr; }
+            .np .np-divider { display:none; }
+            .np .np-monitor { padding:26px 18px 4px; }
+            .np .np-controls { padding:12px 18px 28px; gap:14px; max-width:480px; }
+            .np .now-timer { font-size:46px; }
+        }
+    </style>
     <script>
-        (function() {{
-            var el  = document.getElementById('elapsed');
-            var dot = document.querySelector('.onair i');
-            var baseMs = 0, baseAt = performance.now(), seeded = false, lastText = '';
+    (function() {
+        var cid = sessionStorage.getItem('ppt_cid');
+        if (!cid) {
+            cid = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '' + Math.random()).replace(/\D/g,'').slice(0,18);
+            sessionStorage.setItem('ppt_cid', cid);
+        }
+        var el=document.getElementById('elapsed'), posEl=document.getElementById('pos'), dot=document.querySelector('.onair i');
+        var pad=document.getElementById('pad'), btns=pad.querySelectorAll('.slide-btn');
+        var lockSw=document.getElementById('lockSwitch'), lockLbl=document.getElementById('lockLbl'), lockOther=document.getElementById('lockOther');
+        var stealBtn=document.getElementById('stealBtn'), stopBtn=document.getElementById('stopBtn'), stopForm=document.getElementById('stopForm');
+        var container=document.querySelector('.container');
+        var blkBtn=pad.querySelector('[data-cmd="blackout"]'), whtBtn=pad.querySelector('[data-cmd="whiteout"]');
+        var baseMs=0, baseAt=performance.now(), seeded=false, lastT='', armed=false, lockOn=false, curPos=0, curTotal=0, curAtEnd=false;
 
-            function paint() {{
-                var total = baseMs + (performance.now() - baseAt);
-                if (total < 0) total = 0;
-                var s = Math.floor(total / 1000);
-                var m = String(Math.floor(s / 60)).padStart(2, '0');
-                var x = String(s % 60).padStart(2, '0');
-                var txt = m + ':' + x;
-                if (el && txt !== lastText) {{ el.textContent = txt; lastText = txt; }}
-                if (dot) {{ dot.style.opacity = (total % 1000) < 500 ? '1' : '0.25'; }}
-                requestAnimationFrame(paint);
-            }}
+        function post(u){ return fetch(u, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'cid='+encodeURIComponent(cid) }).then(function(r){ if(r.status===401){ window.location.href='/'; return null; } if(!r.ok) return null; return r.json().catch(function(){ return null; }); }).catch(function(){ return null; }); }
+        function buzz(p){ if (navigator.vibrate) { try { navigator.vibrate(p); } catch(e){} } }
 
-            function sync(force) {{
-                fetch('/elapsed?t=' + Date.now())
-                .then(function(r) {{ return r.text(); }})
-                .then(function(t) {{
-                    var serverMs = parseInt(t, 10);
-                    if (isNaN(serverMs)) return;
-                    var predicted = baseMs + (performance.now() - baseAt);
-                    if (force || !seeded || Math.abs(serverMs - predicted) > 1000) {{
-                        baseMs = serverMs;
-                        baseAt = performance.now();
-                        seeded = true;
-                    }}
-                }})
-                .catch(function() {{}});
-            }}
+        function paint(){ var t=baseMs+(performance.now()-baseAt); if(t<0)t=0; var s=Math.floor(t/1000); var m=String(Math.floor(s/60)).padStart(2,'0'); var x=String(s%60).padStart(2,'0'); var v=m+':'+x; if(el&&v!==lastT){el.textContent=v;lastT=v;} if(dot)dot.style.opacity=(t%1000)<500?'1':'0.25'; requestAnimationFrame(paint); }
+        function applyBounds(){ if(!armed)return; var nb=pad.querySelector('[data-cmd="next"]'), pb=pad.querySelector('[data-cmd="prev"]'); if(nb)nb.disabled=!!curAtEnd; if(pb)pb.disabled=(curTotal>0&&curPos<=1); }
+        function setArmed(on){ armed=on; for(var i=0;i<btns.length;i++)btns[i].disabled=!on; if(container)container.classList.toggle('armed',on); applyBounds(); }
+        function setProj(b,w){ if(blkBtn)blkBtn.classList.toggle('act',!!b); if(whtBtn)whtBtn.classList.toggle('act',!!w); }
+        function renderLock(st){ lockOn=!!st.lock; var mine=!!st.mine; lockSw.classList.toggle('on',mine); lockSw.setAttribute('aria-checked',mine?'true':'false');
+            if(mine){ lockLbl.textContent='YOU HAVE CONTROL'; lockLbl.style.color='var(--accent)'; lockOther.hidden=true; setArmed(true); }
+            else if(lockOn){ lockLbl.textContent='LOCKED BY ANOTHER'; lockLbl.style.color='var(--standby)'; lockOther.hidden=false; setArmed(false); }
+            else { lockLbl.textContent='REMOTE CONTROL LOCK'; lockLbl.style.color=''; lockOther.hidden=true; setArmed(false); }
+            setProj(st.black,st.white); }
+        function pollState(){ fetch('/slide/state?cid='+encodeURIComponent(cid)+'&t='+Date.now()).then(function(r){ if(r.status===401){ window.location.href='/'; return null; } return r.json(); }).then(function(st){ if(!st)return; var pred=baseMs+(performance.now()-baseAt); if(!seeded||Math.abs(st.ms-pred)>1000){baseMs=st.ms;baseAt=performance.now();seeded=true;} curPos=st.pos; curTotal=st.total; curAtEnd=!!st.atEnd; if(st.total>0&&posEl)posEl.textContent=Math.min(st.pos,st.total)+' / '+st.total; renderLock(st); }).catch(function(){}); }
+        function sendSlide(cmd){ if(!armed)return; var hb=pad.querySelector('[data-cmd="'+cmd+'"]'); if(hb){ hb.classList.add('hit'); setTimeout(function(){ hb.classList.remove('hit'); },200); } buzz(12); post('/slide/'+cmd).then(function(res){ if(!res)return; if(res.locked){setArmed(false);pollState();return;} curPos=res.pos; curTotal=res.total; curAtEnd=!!res.atEnd; if(res.total>0&&posEl)posEl.textContent=Math.min(res.pos,res.total)+' / '+res.total; setProj(res.black,res.white); applyBounds(); }); }
+        for(var i=0;i<btns.length;i++){ (function(b){ b.addEventListener('click',function(){ sendSlide(b.getAttribute('data-cmd')); }); })(btns[i]); }
 
-            sync(true);
-            requestAnimationFrame(paint);
-            document.addEventListener('visibilitychange', function() {{
-                if (document.visibilityState === 'visible') sync(true);
-            }});
-            setInterval(function() {{ sync(false); }}, 60000);
-        }})();
-        window.startPolling(['running'], '/', {{ defaultDelay: 1500 }});
+        document.addEventListener('keydown',function(e){ if(e.key===' '||e.key==='Spacebar'){ e.preventDefault(); return; } if(!armed)return; var k=e.key;
+            if(k==='ArrowRight'||k==='PageDown'){ e.preventDefault(); sendSlide('next'); }
+            else if(k==='ArrowLeft'||k==='PageUp'){ e.preventDefault(); sendSlide('prev'); }
+            else if(k==='Home'){ e.preventDefault(); sendSlide('first'); }
+            else if(k==='End'){ e.preventDefault(); sendSlide('last'); }
+            else if(k==='b'||k==='B'){ sendSlide('blackout'); }
+            else if(k==='w'||k==='W'){ sendSlide('whiteout'); } });
+
+        function toggleLock(){ if(armed) post('/lock/off').then(pollState); else if(!lockOn) post('/lock/on').then(function(){pollState();}); else pollState(); }
+        lockSw.addEventListener('click',toggleLock);
+        lockSw.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); toggleLock(); } });
+
+        function bindHold(btn,onComplete){
+            var dur=parseInt(btn.getAttribute('data-hold'),10)||1500; var raf=null,t0=0,active=false,fired=false;
+            function set(p){ btn.style.setProperty('--chgp',p); }
+            function frame(now){ var p=Math.min((now-t0)/dur,1); set(p); if(p>=1){ done(); return; } raf=requestAnimationFrame(frame); }
+            function start(e){ if(btn.disabled)return; e.preventDefault(); active=true; fired=false; btn.classList.remove('releasing'); btn.classList.add('charging'); t0=performance.now(); buzz(8); raf=requestAnimationFrame(frame); }
+            function unwind(){ if(raf){cancelAnimationFrame(raf);raf=null;} btn.classList.add('releasing'); set(0); setTimeout(function(){ btn.classList.remove('charging','releasing'); },320); }
+            function up(){ if(!active)return; var held=performance.now()-t0; active=false; unwind(); if(!fired && held<420 && window.showHoldHint){ window.showHoldHint(btn.getAttribute('data-hint')); } }
+            function leave(){ if(!active)return; active=false; unwind(); }
+            function done(){ fired=true; active=false; if(raf){cancelAnimationFrame(raf);raf=null;} set(1); buzz([16,26,16]); onComplete(); setTimeout(function(){ btn.classList.add('releasing'); set(0); setTimeout(function(){ btn.classList.remove('charging','releasing'); },320); },110); }
+            btn.addEventListener('pointerdown',start);
+            btn.addEventListener('pointerup',up);
+            btn.addEventListener('pointerleave',leave);
+            btn.addEventListener('pointercancel',leave);
+        }
+        bindHold(stopBtn, function(){ if(stopForm.requestSubmit){ stopForm.requestSubmit(); } else { var ev=new Event('submit',{bubbles:true,cancelable:true}); if(stopForm.dispatchEvent(ev)) stopForm.submit(); } });
+        if(stealBtn) bindHold(stealBtn, function(){ post('/lock/steal').then(pollState); });
+
+        var wl=null;
+        function reqWake(){ if(document.visibilityState==='visible' && 'wakeLock' in navigator){ navigator.wakeLock.request('screen').then(function(s){wl=s;}).catch(function(){}); } }
+        reqWake();
+        document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible'){ reqWake(); pollState(); } });
+
+        requestAnimationFrame(paint); pollState(); setInterval(pollState,1200);
+        window.startPolling(['running'], '/', { defaultDelay: 1500 });
+    })();
     </script>
 </div></body></html>
+
 "@
 
     # Lobby view (deck queue). Format args: {0}=startBtnAttrs, {1}=nextFileName, {2}=listHtml
     LobbyView = @"
         <div class="lobby-head">
             <div class="sec-label">Select a deck</div>
-            <p class="lobby-hint">Tap a deck to queue it, or hit GO to start the next one.</p>
+            <p class="lobby-hint">Press and hold a deck to start it, or hold GO for the next one.</p>
         </div>
         {2}
         <div class="footer">
-            <form method="post" action="/start" class="grow">
-                <button class="go-btn" {0}><span class="go-kicker">GO</span><span class="go-main">Start &middot; {1}</span></button>
+            <form method="post" action="/start" class="grow" id="goForm">
+                <button class="go-btn hold" type="button" {0} data-hold="1500" data-submit="goForm" style="--chg-edge:#5af0a0;--chg-track:rgba(52,210,123,.22);--chg-glow:rgba(52,210,123,.7)">
+                    <span class="go-kicker">&#9711; HOLD</span><span class="go-main">Start &middot; {1}</span>
+                </button>
             </form>
-            <form method="post" action="/exit" class="exit-wrap" onsubmit="return confirm('Shut down the system?\nThe presentation running on the PC will also be closed.');">
-                <button class="exit-btn" type="submit" title="Exit System">Exit</button>
+            <form method="post" action="/exit" class="exit-wrap">
+                <button class="exit-btn hold" type="button" data-hold="2000" data-hint="Press and hold to exit" style="--chg-edge:#ff6b6d;--chg-track:rgba(255,77,79,.16);--chg-glow:rgba(255,77,79,.55)" title="Exit System">Exit</button>
             </form>
         </div>
 "@
 
-    # Post-presentation dialog. Format args: {0}=CurrentFileName, {1}=nextBtnAttrs, {2}=nextBtnLabel
+    # Post-presentation dialog. Format args: {0}=CurrentFileName, {1}=nextBtnClassSuffix, {2}=nextBtnAttrs, {3}=nextBtnLabel
     DialogView = @"
         <div class="stage">
             <div class="done-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
             <h2 class="dlg-title">Presentation ended</h2>
             <div class="dlg-name">{0}</div>
             <div class="post-stack">
-                <form method="post" action="/next"><button class="pp-btn pp-next" {1} type="submit">{2}</button></form>
-                <form method="post" action="/retry"><button class="pp-btn pp-retry" type="submit">&#8635; Play Again</button></form>
+                <form method="post" action="/next"><button class="pp-btn pp-next{1}" {2} type="button">{3}</button></form>
+                <form method="post" action="/retry"><button class="pp-btn pp-retry hold" type="button" data-hold="1500" data-hint="Press and hold to replay" style="--chg-edge:#ffbb38;--chg-track:rgba(245,166,35,.2);--chg-glow:rgba(245,166,35,.6)">&#8635; Hold to Play Again</button></form>
                 <form method="post" action="/lobby"><button class="pp-btn pp-lobby" type="submit">Back to List</button></form>
-                <form method="post" action="/exit" onsubmit="return confirm('Shut down the system?\nThe presentation running on the PC will also be closed.');"><button class="pp-btn pp-exit" type="submit">Exit System</button></form>
+                <form method="post" action="/exit"><button class="pp-btn pp-exit hold" type="button" data-hold="2000" data-hint="Press and hold to exit" style="--chg-edge:#ff6b6d;--chg-track:rgba(255,77,79,.18);--chg-glow:rgba(255,77,79,.65)">Hold to Exit System</button></form>
             </div>
         </div>
 "@
@@ -395,6 +553,77 @@ $script:HtmlTemplates = @{
     <script>
         window.startPolling(['waiting'], '/', { defaultDelay: 300, statusRedirects: { 'stopping': '/exit' } });
     </script>
+"@
+
+    # Generic hold-to-charge binder for [data-hold] buttons (concatenated: single braces).
+    # data-hold = ms to charge; data-submit = form id to requestSubmit on completion (else closest form).
+    HoldToConfirmScript = @"
+    <style>
+        @property --chgp { syntax:"<number>"; inherits:false; initial-value:0; }
+        .hold { position:relative; }
+        .hold::before {
+            content:""; position:absolute; inset:0; border-radius:inherit; padding:3.5px;
+            background:conic-gradient(var(--chg-edge, #fff) 0 calc(var(--chgp, 0) * 1turn), var(--chg-track, rgba(255,255,255,.16)) calc(var(--chgp, 0) * 1turn) 1turn);
+            -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+                    mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            -webkit-mask-composite:xor; mask-composite:exclude;
+            filter:drop-shadow(0 0 4px var(--chg-glow, var(--chg-edge, #fff)));
+            opacity:0; transition:opacity .18s var(--ease); pointer-events:none; z-index:4;
+        }
+        .hold.charging::before { opacity:1; }
+        .hold.charging { filter:brightness(1.04); }
+        .hold.releasing { transition:--chgp .3s var(--ease); }
+        .go-btn.charging::after { animation:none; }
+        .go-btn { background:rgba(52,210,123,.08); border:1px solid rgba(52,210,123,.5); color:var(--go); box-shadow:0 0 0 1px rgba(52,210,123,.10), 0 0 26px -10px var(--go), inset 0 0 22px -12px rgba(52,210,123,.7); text-shadow:0 0 14px rgba(52,210,123,.4); }
+        .go-btn .go-kicker { background:rgba(52,210,123,.14); color:var(--go); border:1px solid rgba(52,210,123,.4); }
+        .go-btn .go-main { color:var(--go); }
+        .go-btn:disabled { opacity:.45; filter:none; box-shadow:none; text-shadow:none; }
+        .go-btn::after { box-shadow:none; animation:goNeon 2.8s ease-in-out infinite; }
+        @keyframes goNeon { 0%,100% { box-shadow:0 0 0 1px rgba(52,210,123,.10), 0 0 16px -10px var(--go); } 50% { box-shadow:0 0 0 1px rgba(52,210,123,.24), 0 0 30px -6px var(--go); } }
+        .go-btn.hold::before { opacity:.45; }
+        .go-btn.charging::before { opacity:1; }
+        /* Presentation-ended dialog: neon + hold */
+        .done-mark { box-shadow:0 0 26px -6px rgba(52,210,123,.5); }
+        .pp-next { border:1px solid rgba(52,210,123,.5) !important; color:var(--go) !important; background:rgba(52,210,123,.08) !important; box-shadow:0 0 0 1px rgba(52,210,123,.10), 0 0 26px -10px var(--go) !important; text-shadow:0 0 14px rgba(52,210,123,.4); display:flex; flex-direction:row; align-items:center; justify-content:center; gap:11px; }
+        .pp-next .pp-kicker { font:800 10.5px var(--sans); letter-spacing:2px; color:var(--go); background:rgba(52,210,123,.14); border:1px solid rgba(52,210,123,.4); padding:4px 9px; border-radius:8px; white-space:nowrap; }
+        .pp-next .pp-main { display:flex; flex-direction:column; align-items:flex-start; gap:1px; line-height:1.18; text-align:left; }
+        .pp-next .pp-main-t { font:700 14.5px var(--sans); color:var(--go); }
+        .pp-next .pp-main-d { font:500 11px var(--mono); color:rgba(122,230,170,.72); text-shadow:none; overflow-wrap:anywhere; }
+        .pp-next:disabled { opacity:.45; filter:none; box-shadow:none !important; text-shadow:none; }
+        .pp-retry { background:rgba(245,166,35,.07) !important; color:var(--standby) !important; border-color:rgba(245,166,35,.45) !important; box-shadow:0 0 22px -12px rgba(245,166,35,.6); text-shadow:0 0 12px rgba(245,166,35,.3); }
+        .pp-lobby { background:var(--panel-2); color:var(--txt); border-color:var(--line); }
+        .pp-exit { background:transparent; color:var(--txt-faint); border-color:transparent; }
+        .pp-exit:hover { color:#ff8a8c; }
+        .pp-next.hold::before, .pp-retry.hold::before, .pp-exit.hold::before { opacity:.4; }
+        .pp-next.charging::before, .pp-retry.charging::before, .pp-exit.charging::before { opacity:1; }
+        .deck.hold::before { opacity:.32; }
+        .deck.charging::before { opacity:1; }
+        .exit-btn.hold::before { opacity:.32; }
+        .exit-btn.charging::before { opacity:1; }
+    </style>
+    <script>
+    (function(){
+        function buzz(p){ if (navigator.vibrate) { try { navigator.vibrate(p); } catch(e){} } }
+        function bind(btn){
+            var dur=parseInt(btn.getAttribute('data-hold'),10)||1500; var formId=btn.getAttribute('data-submit'); var raf=null,t0=0,active=false,fired=false;
+            function set(p){ btn.style.setProperty('--chgp',p); }
+            function frame(now){ var p=Math.min((now-t0)/dur,1); set(p); if(p>=1){ done(); return; } raf=requestAnimationFrame(frame); }
+            function start(e){ if(btn.disabled)return; e.preventDefault(); active=true; fired=false; btn.classList.remove('releasing'); btn.classList.add('charging'); t0=performance.now(); buzz(8); raf=requestAnimationFrame(frame); }
+            function unwind(){ if(raf){cancelAnimationFrame(raf);raf=null;} btn.classList.add('releasing'); set(0); setTimeout(function(){ btn.classList.remove('charging','releasing'); },320); }
+            function up(){ if(!active)return; var held=performance.now()-t0; active=false; unwind(); if(!fired && held<420 && window.showHoldHint){ window.showHoldHint(btn.getAttribute('data-hint')); } }
+            function leave(){ if(!active)return; active=false; unwind(); }
+            function fire(){ var f=formId?document.getElementById(formId):btn.closest('form'); if(f){ if(f.requestSubmit){ f.requestSubmit(); } else { var ev=new Event('submit',{bubbles:true,cancelable:true}); if(f.dispatchEvent(ev)) f.submit(); } } }
+            function done(){ fired=true; active=false; if(raf){cancelAnimationFrame(raf);raf=null;} set(1); buzz([16,26,16]); fire(); setTimeout(function(){ btn.classList.add('releasing'); set(0); setTimeout(function(){ btn.classList.remove('charging','releasing'); },320); },110); }
+            btn.addEventListener('pointerdown',start);
+            btn.addEventListener('pointerup',up);
+            btn.addEventListener('pointerleave',leave);
+            btn.addEventListener('pointercancel',leave);
+        }
+        var list=document.querySelectorAll('[data-hold]');
+        for(var i=0;i<list.length;i++){ bind(list[i]); }
+    })();
+    </script>
+
 "@
 
     # Processing view (concatenated directly: single braces).
