@@ -25,6 +25,20 @@ jobs:
         run: |
           ./build/build.ps1
 
+      - name: Verify dist syntax (Parser::ParseFile)
+        shell: pwsh
+        run: |
+          $e = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD/dist/presentation-controller.ps1", [ref]$null, [ref]$e)
+          if ($e) { $e | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          Write-Host "Parse check passed (0 errors)"
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          ./tests/run-tests.ps1
+
       - name: Package files into ZIP
         shell: pwsh
         run: |
