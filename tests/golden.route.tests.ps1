@@ -10,7 +10,7 @@
 #
 #  対象ロジック（現状 src/com-handler.ps1 Watch-RunningPresentation にインライン）:
 #    valid コマンド集合: next, prev, first, last, blackout, whiteout
-#    （docs/01_characterization_spec.txt [F]）
+#    （このファイル内の期待表 [F]）
 # =============================================================================
 
 Write-TestPending "[F] GET /status        -> kind=status"

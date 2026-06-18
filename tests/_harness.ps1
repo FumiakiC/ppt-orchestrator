@@ -10,6 +10,15 @@ $script:Failures    = @()
 
 function Assert-Equal {
     param($Expected, $Actual, [string]$Because = '')
+    # Null guard: both null → pass; one null → fail (distinguishes $null from '')
+    if ($null -eq $Expected -and $null -eq $Actual) { $script:TestPass++; return }
+    if ($null -eq $Expected -or  $null -eq $Actual) {
+        $script:TestFail++
+        $ne = if ($null -eq $Expected) { '<null>' } else { "$Expected" }
+        $na = if ($null -eq $Actual)   { '<null>' } else { "$Actual" }
+        $script:Failures += "[FAIL] $Because`n    expected: <$ne>`n    actual:   <$na>"
+        return
+    }
     if ($Expected -is [System.Array] -or $Actual -is [System.Array]) {
         $e = ($Expected -join '|'); $a = ($Actual -join '|')
     } else { $e = "$Expected"; $a = "$Actual" }
@@ -38,8 +47,11 @@ function Resolve-SrcFunction {
     # in the source file (Add-Type, param blocks, COM init, etc.) is executed.
     param([string]$Path, [string]$Name)
     $fullPath = (Resolve-Path -LiteralPath $Path).Path
+    $tokens = $null
+    $errors = $null
     $ast = [System.Management.Automation.Language.Parser]::ParseFile(
-        $fullPath, [ref]$null, [ref]$null)
+        $fullPath, [ref]$tokens, [ref]$errors)
+    if ($errors) { throw "Resolve-SrcFunction: parse error in '$Path': $($errors[0].Message)" }
     $found = $ast.FindAll(
         { param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] },
         $true

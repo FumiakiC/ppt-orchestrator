@@ -8,7 +8,7 @@
 #    $decoded = [System.Web.HttpUtility]::UrlDecode($reqBody)
 #    if ($decoded -match 'cid=([A-Za-z0-9_\-]+)') { $cid = $matches[1] } else { $cid = '' }
 #
-#  現状仕様として固定する挙動（docs/01_characterization_spec.txt [D]）:
+#  現状仕様として固定する挙動（このファイル内の期待表 [D]）:
 #    'cid=abc123'      -> 'abc123'
 #    'cid=a_b-c'       -> 'a_b-c'
 #    'x=1&cid=ZZ9'     -> 'ZZ9'

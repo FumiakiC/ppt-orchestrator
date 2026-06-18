@@ -8,8 +8,13 @@ $here = $PSScriptRoot
 . "$here/_harness.ps1"
 
 Get-ChildItem "$here" -Filter '*.tests.ps1' | Sort-Object Name | ForEach-Object {
-    Write-Host "`n--- $($_.Name) ---"
-    . $_.FullName
+    $file = $_
+    Write-Host "`n--- $($file.Name) ---"
+    try {
+        . $file.FullName
+    } catch {
+        Assert-True $false ("Unhandled exception in {0}: {1}" -f $file.Name, $_.Exception.Message)
+    }
 }
 
 Invoke-TestSummary

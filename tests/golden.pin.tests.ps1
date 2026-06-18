@@ -7,7 +7,7 @@
 #  対象ロジック（現状 src/auth.ps1 Invoke-AuthHandler にインライン）:
 #    if ([System.Web.HttpUtility]::UrlDecode($Body) -match "pin=([0-9]{6})") { $submittedPin = $matches[1] }
 #
-#  現状仕様として固定する挙動（docs/01_characterization_spec.txt [E]）:
+#  現状仕様として固定する挙動（このファイル内の期待表 [E]）:
 #    'pin=123456'      -> '123456'
 #    'PIN=123456'      -> '123456'   # -match 既定で大小無視
 #    'a=b&pin=000123'  -> '000123'

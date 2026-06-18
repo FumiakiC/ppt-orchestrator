@@ -37,7 +37,7 @@ jobs:
       - name: Run tests
         shell: pwsh
         run: |
-          ./tests/run-tests.ps1
+          pwsh -NoProfile -File ./tests/run-tests.ps1
 
       - name: Package files into ZIP
         shell: pwsh

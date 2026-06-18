@@ -20,7 +20,7 @@ function New-MockView {
         Add-Member -PassThru ScriptMethod GetClickCount { $cc }.GetNewClosure()
 }
 
-# --- テストケース（docs/01_characterization_spec.txt [A] の期待表どおり） ---
+# --- テストケース（このファイル内の期待表 [A] どおり） ---
 
 # Total <= 0 ガード
 Assert-Equal $false (Test-SlideShowAtEnd -View (New-MockView 0 0)         -Pos 3  -Total 0)  'Total=0 guard'
