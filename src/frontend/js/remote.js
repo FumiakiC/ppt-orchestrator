@@ -6,7 +6,7 @@
     }
     var el=document.getElementById('elapsed'), posEl=document.getElementById('pos'), dot=document.querySelector('.onair i');
     var pad=document.getElementById('pad'), btns=pad.querySelectorAll('.slide-btn');
-    var lockSw=document.getElementById('lockSwitch'), lockLbl=document.getElementById('lockLbl'), lockOther=document.getElementById('lockOther');
+    var lockSw=document.getElementById('lockSwitch'), lockLbl=document.getElementById('lockLbl'), lockOtherMsg=document.getElementById('lockOtherMsg');
     var stealBtn=document.getElementById('stealBtn'), stopBtn=document.getElementById('stopBtn'), stopForm=document.getElementById('stopForm');
     var container=document.querySelector('.container');
     var blkBtn=pad.querySelector('[data-cmd="blackout"]'), whtBtn=pad.querySelector('[data-cmd="whiteout"]');
@@ -20,9 +20,9 @@
     function setArmed(on){ armed=on; for(var i=0;i<btns.length;i++)btns[i].disabled=!on; if(container)container.classList.toggle('armed',on); applyBounds(); }
     function setProj(b,w){ if(blkBtn)blkBtn.classList.toggle('act',!!b); if(whtBtn)whtBtn.classList.toggle('act',!!w); }
     function renderLock(st){ lockOn=!!st.lock; var mine=!!st.mine; lockSw.classList.toggle('on',mine); lockSw.setAttribute('aria-checked',mine?'true':'false');
-        if(mine){ lockLbl.textContent='YOU HAVE CONTROL'; lockLbl.style.color='var(--accent)'; lockOther.hidden=true; setArmed(true); }
-        else if(lockOn){ lockLbl.textContent='LOCKED BY ANOTHER'; lockLbl.style.color='var(--standby)'; lockOther.hidden=false; setArmed(false); }
-        else { lockLbl.textContent='REMOTE CONTROL LOCK'; lockLbl.style.color=''; lockOther.hidden=true; setArmed(false); }
+        if(mine){ lockLbl.textContent='YOU HAVE CONTROL'; lockLbl.style.color='var(--accent)'; lockOtherMsg.textContent='You have control of this presentation.'; stealBtn.disabled=true; setArmed(true); }
+        else if(lockOn){ lockLbl.textContent='LOCKED BY ANOTHER'; lockLbl.style.color='var(--standby)'; lockOtherMsg.textContent='This presentation is being controlled by another device.'; stealBtn.disabled=false; setArmed(false); }
+        else { lockLbl.textContent='REMOTE CONTROL LOCK'; lockLbl.style.color=''; lockOtherMsg.textContent='Tap the switch above to take control.'; stealBtn.disabled=true; setArmed(false); }
         setProj(st.black,st.white); }
     function pollState(){ fetch('/slide/state?cid='+encodeURIComponent(cid)+'&t='+Date.now()).then(function(r){ if(r.status===401){ window.location.href='/'; return null; } return r.json(); }).then(function(st){ if(!st)return; var pred=baseMs+(performance.now()-baseAt); if(!seeded||Math.abs(st.ms-pred)>1000){baseMs=st.ms;baseAt=performance.now();seeded=true;} curPos=st.pos; curTotal=st.total; curAtEnd=!!st.atEnd; if(st.total>0&&posEl)posEl.textContent=Math.min(st.pos,st.total)+' / '+st.total; renderLock(st); }).catch(function(){}); }
     function sendSlide(cmd){ if(!armed)return; var hb=pad.querySelector('[data-cmd="'+cmd+'"]'); if(hb){ hb.classList.add('hit'); setTimeout(function(){ hb.classList.remove('hit'); },200); } buzz(12); post('/slide/'+cmd).then(function(res){ if(!res)return; if(res.locked){setArmed(false);pollState();return;} curPos=res.pos; curTotal=res.total; curAtEnd=!!res.atEnd; if(res.total>0&&posEl)posEl.textContent=Math.min(res.pos,res.total)+' / '+res.total; setProj(res.black,res.white); applyBounds(); }); }
