@@ -2,6 +2,7 @@
     function buzz(p) { if (navigator.vibrate) { try { navigator.vibrate(p); } catch(e) {} } }
 
     window.bindHold = function(btn, onComplete) {
+        if (onComplete) btn._onComplete = onComplete;
         if (btn.dataset.holdInited) return;
         btn.dataset.holdInited = '1';
         var dur = parseInt(btn.getAttribute('data-hold'), 10) || 1500;
@@ -15,7 +16,7 @@
         function up() { if (!active) return; var held = performance.now() - t0; active = false; unwind(); if (!fired && held < 420 && window.showHoldHint) { window.showHoldHint(btn.getAttribute('data-hint')); } }
         function leave() { if (!active) return; active = false; unwind(); }
         function fire() {
-            if (typeof onComplete === 'function') { onComplete(); return; }
+            if (typeof btn._onComplete === 'function') { btn._onComplete(); return; }
             var f = formId ? document.getElementById(formId) : btn.closest('form');
             if (f) { if (f.requestSubmit) { f.requestSubmit(); } else { var ev = new Event('submit', {bubbles: true, cancelable: true}); if (f.dispatchEvent(ev)) f.submit(); } }
         }

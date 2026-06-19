@@ -18,7 +18,7 @@ function Get-UserAction {
         $line = "━" * 70
         Write-Host $line -ForegroundColor DarkCyan
         Write-Host "  [ ppt-orchestrator ] " -ForegroundColor Cyan -NoNewline
-        Write-Host "%%BUILD_VERSION%% - Presentation Controller" -ForegroundColor DarkGray
+        Write-Host '%%BUILD_VERSION%% - Presentation Controller' -ForegroundColor DarkGray
         Write-Host $line -ForegroundColor DarkCyan
         Write-Host ""
         Write-Host "   🔐 PIN CODE: " -NoNewline -ForegroundColor Yellow

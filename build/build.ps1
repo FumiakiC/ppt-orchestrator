@@ -7,6 +7,11 @@ param(
     [string]$Version = 'dev'
 )
 
+if ($Version -notmatch '^[\w.\-]+$') {
+    Write-Error "Invalid -Version value: '$Version'. Only word characters, dots, and hyphens are allowed."
+    exit 1
+}
+
 $srcDir      = Join-Path (Split-Path $PSScriptRoot -Parent) "src"
 $frontendDir = Join-Path $srcDir "frontend"
 $distDir     = Join-Path (Split-Path $PSScriptRoot -Parent) "dist"
@@ -86,7 +91,7 @@ $maxIter = 10
 for ($i = 0; $i -lt $maxIter; $i++) {
     $before = $combined
     foreach ($kv in $tokenMap.GetEnumerator()) {
-        $combined = $combined.Replace($kv.Key, $kv.Value)
+        $combined = $combined.Replace($kv.Key, [string]$kv.Value)
     }
     if ($combined -eq $before) { break }
     if ($i -eq ($maxIter - 1)) {
