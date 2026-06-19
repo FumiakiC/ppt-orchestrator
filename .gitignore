@@ -30,4 +30,5 @@ reference/
 # Windows
 Thumbs.db
 ehthumbs.db
-Desktop.inichanges*.diff
+Desktop.ini
+changes*.diff
