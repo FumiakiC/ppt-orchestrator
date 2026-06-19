@@ -23,7 +23,31 @@ jobs:
       - name: Run Build Script
         shell: pwsh
         run: |
-          ./build/build.ps1
+          ./build/build.ps1 -Version "ci-build"
+
+      - name: Guard A — no unresolved build tokens in dist
+        shell: pwsh
+        run: |
+          $dist = Get-Content -Raw ./dist/presentation-controller.ps1
+          if ($dist -match '%%BUILD_[A-Z0-9_]+%%') {
+            Write-Error "Unresolved %%BUILD_*%% token found in dist"
+            exit 1
+          }
+          Write-Host "Guard A passed"
+
+      - name: Guard B — no -f format operator on HtmlTemplates in src
+        shell: pwsh
+        run: |
+          $hits = Select-String -Path ./src/*.ps1 -Pattern '\$script:HtmlTemplates\.\w+\s*-f\b'
+          if ($hits) { $hits | ForEach-Object { Write-Error $_ }; exit 1 }
+          Write-Host "Guard B passed"
+
+      - name: Guard C — no {{ escapes remaining in src/templates.ps1
+        shell: pwsh
+        run: |
+          $hits = Select-String -Path ./src/templates.ps1 -Pattern '\{\{'
+          if ($hits) { Write-Error "{{ found in src/templates.ps1"; exit 1 }
+          Write-Host "Guard C passed"
 
       - name: Verify dist syntax (Parser::ParseFile)
         shell: pwsh

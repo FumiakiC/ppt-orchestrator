@@ -19,7 +19,7 @@ function Invoke-AuthHandler {
     }
 
     if ($script:AuthFailedTracker.ContainsKey($ip) -and (Get-Date) -lt $script:AuthFailedTracker[$ip].AddSeconds(1)) {
-        $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", "error"
+        $authHtml = $script:HtmlTemplates.AuthView.Replace('%%BGCOLOR%%', '#0f2027').Replace('%%AUTH_ERROR%%', 'error')
         Send-HttpResponse -Response $Response -Content $authHtml
         return $false
     }
@@ -37,7 +37,7 @@ function Invoke-AuthHandler {
         }
     }
     $script:AuthFailedTracker[$ip] = (Get-Date)
-    $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", "error"
+    $authHtml = $script:HtmlTemplates.AuthView.Replace('%%BGCOLOR%%', '#0f2027').Replace('%%AUTH_ERROR%%', 'error')
     Send-HttpResponse -Response $Response -Content $authHtml
     return $false
 }

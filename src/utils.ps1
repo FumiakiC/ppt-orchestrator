@@ -99,5 +99,5 @@ function Get-SafeContextAsync {
 
 function Get-HtmlHeader {
     param([string]$Title, [string]$BgColor = "#1a1a1a")
-    return $script:HtmlTemplates.HtmlHeader -f $Title, $BgColor
+    return $script:HtmlTemplates.HtmlHeader.Replace('%%TITLE%%', [string]$Title).Replace('%%BGCOLOR%%', [string]$BgColor)
 }

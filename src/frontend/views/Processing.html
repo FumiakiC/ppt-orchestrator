@@ -1,0 +1,9 @@
+    <div class="stage">
+        <div class="loader"></div>
+        <h2 class="dlg-title">Processing&hellip;</h2>
+        <p class="lobby-hint">The screen will refresh automatically.</p>
+    </div>
+    <script>
+        window.startPolling(['changing', 'starting'], '/', { defaultDelay: 500, maxRetries: 60, maxErrors: 40 });
+    </script>
+</div></body></html>

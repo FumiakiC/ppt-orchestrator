@@ -1,0 +1,81 @@
+    <div class="stage np">
+        <div class="npgrid">
+            <div class="np-monitor">
+                <div class="onair"><i></i> ON AIR</div>
+                <div class="now-name">%%DECK%%</div>
+                <div class="now-sub">Remote slide control</div>
+                <div class="now-timer" id="elapsed">00:00</div>
+                <div class="pos" id="pos">&mdash; / &mdash;</div>
+            </div>
+            <div class="np-divider"></div>
+            <div class="np-controls">
+                <div class="lockbar" id="lockbar">
+                    <div class="lbl" id="lockLbl">REMOTE CONTROL LOCK</div>
+                    <div class="switch" id="lockSwitch" role="switch" aria-checked="false" aria-labelledby="lockLbl" tabindex="0"><i></i></div>
+                </div>
+                <div class="lock-other" id="lockOther" hidden>
+                    <span>This presentation is being controlled by another device.</span>
+                    <button class="steal-btn hold" id="stealBtn" type="button" data-hold="1500" data-hint="Press and hold to take control" style="--chg-edge:#ffbb38;--chg-glow:rgba(245,166,35,.9)">Hold to take control</button>
+                </div>
+                <div class="slidepad" id="pad">
+                    <button class="slide-btn nav" data-cmd="prev"  disabled aria-label="Previous">&#9664;</button>
+                    <button class="slide-btn nav" data-cmd="next"  disabled aria-label="Next">&#9654;</button>
+                    <button class="slide-btn"     data-cmd="first" disabled>&#9198; First</button>
+                    <button class="slide-btn"     data-cmd="last"  disabled>Last &#9197;</button>
+                    <button class="slide-btn blk" data-cmd="blackout" disabled>&#9632; Black</button>
+                    <button class="slide-btn blk" data-cmd="whiteout" disabled>&#9633; White</button>
+                </div>
+                <form method="post" action="/stop" class="now-actions" id="stopForm">
+                    <button class="ctl-btn danger hold" type="button" id="stopBtn" data-hold="1500" data-hint="Press and hold to stop" style="--chg-edge:#ff6b6d;--chg-glow:rgba(255,77,79,.9)">&#9632; Hold to Stop</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <style>
+        .np .pos { font:600 14px var(--mono); color:var(--txt-dim); letter-spacing:3px; margin-top:6px; }
+
+        .stage.np { padding:0; align-items:stretch; justify-content:stretch; }
+        .np .npgrid { display:grid; grid-template-columns:1fr 1px 1fr; width:100%; flex:1; min-height:0; }
+        .np .np-divider { background:linear-gradient(180deg, transparent, var(--line) 16%, var(--line) 84%, transparent); }
+        .np .np-monitor { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; padding:36px; text-align:center; }
+        .np .np-controls { display:flex; flex-direction:column; justify-content:center; gap:16px; padding:36px; width:100%; max-width:540px; margin:0 auto; }
+        .np .onair { margin:0; }
+        .np .now-name { font-size:1.45rem; margin:20px 0 4px; }
+        .np .now-sub { margin-top:2px; }
+        .np .now-timer { font-size:58px; margin:22px 0 2px; }
+
+        .np .lockbar { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; padding:12px 14px 12px 16px; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--panel); }
+        .np .lockbar .lbl { font:700 11px/1 var(--mono); letter-spacing:1.6px; color:var(--txt-dim); transition:color .16s; }
+        .np .switch { width:50px; height:28px; border-radius:999px; background:var(--bg-2); border:1px solid var(--line); position:relative; cursor:pointer; transition:.18s var(--ease); flex:0 0 auto; }
+        .np .switch i { position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:var(--txt-faint); transition:.18s var(--ease); }
+        .np .switch.on { background:rgba(90,169,255,.22); border-color:rgba(90,169,255,.6); }
+        .np .switch.on i { left:25px; background:var(--accent); box-shadow:0 0 8px rgba(90,169,255,.7); }
+
+        .np .lock-other { display:flex; flex-direction:column; align-items:center; gap:10px; width:100%; font:600 12.5px var(--sans); color:var(--standby); line-height:1.45; text-align:center; }
+        .np .steal-btn { width:100%; max-width:300px; padding:11px 18px; border-radius:var(--radius-sm); border:1px solid rgba(245,166,35,.4); background:rgba(245,166,35,.08); color:var(--standby); font:650 13px var(--sans); cursor:pointer; }
+
+        .np .slidepad { display:grid; grid-template-columns:1fr 1fr; gap:12px; width:100%; }
+        .np .slide-btn { border-radius:14px; border:1px solid var(--line); background:var(--panel-2); color:var(--txt); font:600 13.5px var(--sans); cursor:pointer; transition:.14s var(--ease); display:flex; align-items:center; justify-content:center; gap:8px; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; padding:14px; }
+        .np .slide-btn.nav { padding:24px; font-size:22px; }
+        .np .slide-btn:not(.nav) { color:var(--txt-dim); background:var(--panel); }
+        .np .slide-btn:not(:disabled):hover { border-color:#34404d; }
+        .np .slide-btn:active:not(:disabled) { transform:scale(.97); }
+        .np .slide-btn:disabled { opacity:.32; cursor:not-allowed; }
+        .np .slide-btn.act { border-color:rgba(90,169,255,.6); color:var(--accent); background:rgba(90,169,255,.10); }
+        .np .slide-btn.hit { border-color:rgba(90,169,255,.7); color:var(--accent); background:rgba(90,169,255,.16); transition:none; }
+
+        .np .now-actions { width:100%; margin:0; max-width:none; }
+        .np .ctl-btn.danger { display:flex; align-items:center; justify-content:center; }
+
+        @media (max-width:759px) {
+            .np .npgrid { grid-template-columns:1fr; }
+            .np .np-divider { display:none; }
+            .np .np-monitor { padding:26px 18px 4px; }
+            .np .np-controls { padding:12px 18px 28px; gap:14px; max-width:480px; }
+            .np .now-timer { font-size:46px; }
+        }
+    </style>
+    <script>
+%%BUILD_JS_REMOTE%%
+    </script>
+</div></body></html>
