@@ -12,8 +12,40 @@ permissions:
   contents: read
 
 jobs:
+  # 0. バージョン採番ジョブ（push+main のときだけ実バージョンを算出、それ以外は ci-build）
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    env:
+      # メジャー.マイナー。新しいマイナーを切るときはここだけ変更（patch は自動で 0 始まり）
+      MAJOR_MINOR: "1.1"
+    steps:
+      - name: Determine version
+        id: ver
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ github.event_name }}" = "push" ]; then
+            mm_re=$(printf '%s' "$MAJOR_MINOR" | sed 's/\./\\./g')
+            existing=$(gh api "repos/${{ github.repository }}/tags" --paginate --jq '.[].name' \
+              | grep -E "^v${mm_re}\.[0-9]+$" || true)
+            if [ -z "$existing" ]; then
+              patch=0
+            else
+              max=$(printf '%s\n' "$existing" | sed -E "s/^v${mm_re}\.//" | sort -n | tail -1)
+              patch=$((max + 1))
+            fi
+            version="v${MAJOR_MINOR}.${patch}"
+          else
+            version="ci-build"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $version"
+
   # 1. ビルドとパッケージングの検証ジョブ（PR時も実行されるが、権限はreadのみ）
   build-check:
+    needs: version
     runs-on: ubuntu-latest
 
     steps:
@@ -23,7 +55,31 @@ jobs:
       - name: Run Build Script
         shell: pwsh
         run: |
-          ./build/build.ps1
+          ./build/build.ps1 -Version "${{ needs.version.outputs.version }}"
+
+      - name: Guard A — no unresolved build tokens in dist
+        shell: pwsh
+        run: |
+          $dist = Get-Content -Raw ./dist/presentation-controller.ps1
+          if ($dist -match '%%BUILD_[A-Z0-9_]+%%') {
+            Write-Error "Unresolved %%BUILD_*%% token found in dist"
+            exit 1
+          }
+          Write-Host "Guard A passed"
+
+      - name: Guard B — no -f format operator on HtmlTemplates in src
+        shell: pwsh
+        run: |
+          $hits = Select-String -Path ./src/*.ps1 -Pattern '\$script:HtmlTemplates\.\w+\s*-f\b'
+          if ($hits) { $hits | ForEach-Object { Write-Error $_ }; exit 1 }
+          Write-Host "Guard B passed"
+
+      - name: Guard C — no {{ escapes remaining in src/templates.ps1
+        shell: pwsh
+        run: |
+          $hits = Select-String -Path ./src/templates.ps1 -Pattern '\{\{'
+          if ($hits) { Write-Error "{{ found in src/templates.ps1"; exit 1 }
+          Write-Host "Guard C passed"
 
       - name: Verify dist syntax (Parser::ParseFile)
         shell: pwsh
@@ -61,7 +117,7 @@ jobs:
 
   # 2. リリース公開ジョブ（mainマージ時のみ実行され、書き込み権限を持つ）
   release:
-    needs: build-check
+    needs: [ version, build-check ]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
 
@@ -73,39 +129,17 @@ jobs:
     permissions:
       contents: write
 
-    env:
-      # メジャー.マイナー。新しいマイナーを切るときはここだけ変更（patch は自動で 0 始まり）
-      MAJOR_MINOR: "1.1"
-
     steps:
       - name: Download built ZIP
         uses: actions/download-artifact@v4
         with:
           name: ppt-orchestrator-package
 
-      - name: Determine next version (patch resets per minor)
-        id: ver
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mm_re=$(printf '%s' "$MAJOR_MINOR" | sed 's/\./\\./g')
-          existing=$(gh api "repos/${{ github.repository }}/tags" --paginate --jq '.[].name' \
-            | grep -E "^v${mm_re}\.[0-9]+$" || true)
-          if [ -z "$existing" ]; then
-            patch=0
-          else
-            max=$(printf '%s\n' "$existing" | sed -E "s/^v${mm_re}\.//" | sort -n | tail -1)
-            patch=$((max + 1))
-          fi
-          version="v${MAJOR_MINOR}.${patch}"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Next version: $version"
-
       - name: Create GitHub Release and Upload ZIP
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.ver.outputs.version }}
-          name: Release ${{ steps.ver.outputs.version }}
+          tag_name: ${{ needs.version.outputs.version }}
+          name: Release ${{ needs.version.outputs.version }}
           body: |
             ## 🎭 PPT-Orchestrator 最新自動ビルドパッケージ
             コミット `${{ github.sha }}` から自動生成された製品版パッケージです。

@@ -18,7 +18,7 @@ function Get-UserAction {
         $line = "━" * 70
         Write-Host $line -ForegroundColor DarkCyan
         Write-Host "  [ ppt-orchestrator ] " -ForegroundColor Cyan -NoNewline
-        Write-Host "v1.0 - Presentation Controller" -ForegroundColor DarkGray
+        Write-Host '%%BUILD_VERSION%% - Presentation Controller' -ForegroundColor DarkGray
         Write-Host $line -ForegroundColor DarkCyan
         Write-Host ""
         Write-Host "   🔐 PIN CODE: " -NoNewline -ForegroundColor Yellow
@@ -145,7 +145,10 @@ function Get-UserAction {
         }
         $listHtml += "</div>"
 
-        $bodyContent = $script:HtmlTemplates.LobbyView -f $stBtn, $nextTxt, $listHtml
+        $bodyContent = $script:HtmlTemplates.LobbyView
+        $bodyContent = $bodyContent.Replace('%%LOBBY_NEXT_TEXT%%', [string]$nextTxt)
+        $bodyContent = $bodyContent.Replace('%%LOBBY_START_BTN%%', [string]$stBtn)
+        $bodyContent = $bodyContent.Replace('%%LOBBY_LIST%%',      [string]$listHtml)
     } else {
         if ($NextFileName) {
             $encNext = [System.Web.HttpUtility]::HtmlEncode($NextFileName)
@@ -158,7 +161,11 @@ function Get-UserAction {
             $nxtLbl  = "No slides in queue"
         }
 
-        $bodyContent = $script:HtmlTemplates.DialogView -f ([System.Web.HttpUtility]::HtmlEncode($CurrentFileName)), $nxtCls, $nxtSt, $nxtLbl
+        $bodyContent = $script:HtmlTemplates.DialogView
+        $bodyContent = $bodyContent.Replace('%%DIALOG_NEXT_CLS%%',   [string]$nxtCls)
+        $bodyContent = $bodyContent.Replace('%%DIALOG_NEXT_STATE%%', [string]$nxtSt)
+        $bodyContent = $bodyContent.Replace('%%DIALOG_NEXT_LABEL%%', [string]$nxtLbl)
+        $bodyContent = $bodyContent.Replace('%%DIALOG_FILE%%',       [string][System.Web.HttpUtility]::HtmlEncode($CurrentFileName))
     }
 
     $mainHtml       = $head + $bodyContent + $script:HtmlTemplates.HoldToConfirmScript + $script:HtmlTemplates.PollingScript + "</div></body></html>"

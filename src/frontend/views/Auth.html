@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <title>Authentication Required</title>
+    <!-- %%BGCOLOR%% compat: replaced at runtime but has no visual effect (theme is CSS-var-driven) -->
+    <style>
+        :root {
+            --bg:#0b0d10; --panel:#171b20; --panel-2:#1d2229; --line:#262c34;
+            --txt:#e9edf2; --txt-dim:#9aa4b0; --txt-faint:#5d6772;
+            --standby:#f5a623; --live:#ff4d4f;
+            --ease:cubic-bezier(.16,.84,.44,1);
+            --sans:ui-sans-serif,-apple-system,"Segoe UI Variable","Segoe UI","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+            --mono:ui-monospace,"Cascadia Code","SF Mono","Consolas","Roboto Mono",monospace;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family:var(--sans); color:var(--txt);
+            background:
+                radial-gradient(120% 55% at 50% -10%, #1a2733 0%, transparent 55%),
+                radial-gradient(90% 45% at 50% 112%, #1d160a 0%, transparent 50%),
+                var(--bg);
+            min-height:100vh; min-height:100dvh;
+            display:flex; align-items:center; justify-content:center; padding:24px;
+            position:relative; overflow:hidden;
+        }
+        body::after {
+            content:""; position:fixed; inset:0; pointer-events:none;
+            background:radial-gradient(135% 95% at 50% 50%, transparent 56%, rgba(0,0,0,.55) 100%);
+            mix-blend-mode:multiply;
+        }
+        .auth-container {
+            position:relative; z-index:10; width:100%; max-width:380px; text-align:center;
+            background:linear-gradient(180deg,var(--panel-2),var(--panel));
+            border:1px solid var(--line); border-radius:22px; padding:42px 30px 34px;
+            box-shadow:0 24px 60px rgba(0,0,0,.5);
+        }
+        .lock-shield {
+            width:62px; height:62px; border-radius:18px; display:grid; place-items:center; margin:0 auto 20px;
+            color:var(--standby); background:linear-gradient(160deg,#23282f,#171b20);
+            border:1px solid var(--line); box-shadow:0 10px 26px rgba(0,0,0,.4);
+        }
+        .lock-shield svg { width:28px; height:28px; }
+        h1 { font-size:1.35rem; font-weight:650; margin-bottom:8px; }
+        .subtitle { color:var(--txt-dim); font-size:.88rem; margin-bottom:24px; line-height:1.5; }
+        .pin-dots { display:flex; justify-content:center; gap:12px; margin-bottom:12px; }
+        .pin-dots.shake { animation:shake .5s; }
+        .pin-dots i {
+            display:block; width:16px; height:16px; border-radius:50%;
+            border:2px solid var(--line); background:transparent;
+            transition:.18s var(--ease);
+        }
+        .pin-dots i.full {
+            background:var(--standby); border-color:var(--standby);
+            box-shadow:0 0 8px rgba(245,166,35,.55);
+        }
+        @keyframes shake {
+            0%,100% { transform:translateX(0); }
+            10%,30%,50%,70%,90% { transform:translateX(-7px); }
+            20%,40%,60%,80% { transform:translateX(7px); }
+        }
+        .error-msg { color:var(--live); font-size:.85rem; margin:0 0 16px; opacity:0; transition:opacity .3s; }
+        .error-msg.show { opacity:1; }
+        .keypad { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:18px; }
+        .key {
+            padding:16px 0; font-family:var(--mono); font-size:1.3rem; font-weight:600;
+            border:1px solid var(--line); border-radius:13px;
+            background:linear-gradient(180deg,var(--panel-2),var(--panel));
+            color:var(--txt); cursor:pointer; transition:.12s var(--ease);
+        }
+        .key:active { transform:scale(.93); background:var(--panel-2); }
+        .key:focus-visible { outline:2px solid var(--standby); outline-offset:2px; }
+        .key.ghost { color:var(--txt-dim); border-color:transparent; background:transparent; font-size:1.1rem; }
+        .key.ghost:active { background:var(--panel-2); border-color:var(--line); }
+        .btn-submit {
+            width:100%; padding:16px; font-family:var(--sans); font-size:1rem; font-weight:700; letter-spacing:.4px;
+            border:none; border-radius:14px; cursor:pointer; color:#1c1304;
+            background:linear-gradient(180deg,var(--standby),#e0921a);
+            box-shadow:0 8px 22px rgba(245,166,35,.28), inset 0 1px 0 rgba(255,255,255,.3);
+            transition:.16s var(--ease);
+        }
+        .btn-submit:hover { filter:brightness(1.05); }
+        .btn-submit:active { transform:scale(.985); }
+        .btn-submit:disabled { filter:grayscale(.5); opacity:.5; cursor:not-allowed; box-shadow:none; }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <div class="lock-shield">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        </div>
+        <h1>Enter PIN Code</h1>
+        <p class="subtitle">Check the host PC console for the 6-digit PIN.</p>
+
+        <form method="post" action="/auth" id="authForm">
+            <div class="pin-dots %%AUTH_ERROR%%" id="pinDots">
+                <i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+            <div class="error-msg %%AUTH_ERROR%%" id="errorMsg">Invalid PIN. Please try again.</div>
+            <input type="hidden" name="pin" id="pinValue">
+            <div class="keypad">
+                <button type="button" class="key" aria-label="1" onclick="pressKey('1')">1</button>
+                <button type="button" class="key" aria-label="2" onclick="pressKey('2')">2</button>
+                <button type="button" class="key" aria-label="3" onclick="pressKey('3')">3</button>
+                <button type="button" class="key" aria-label="4" onclick="pressKey('4')">4</button>
+                <button type="button" class="key" aria-label="5" onclick="pressKey('5')">5</button>
+                <button type="button" class="key" aria-label="6" onclick="pressKey('6')">6</button>
+                <button type="button" class="key" aria-label="7" onclick="pressKey('7')">7</button>
+                <button type="button" class="key" aria-label="8" onclick="pressKey('8')">8</button>
+                <button type="button" class="key" aria-label="9" onclick="pressKey('9')">9</button>
+                <div class="key ghost" aria-hidden="true"></div>
+                <button type="button" class="key" aria-label="0" onclick="pressKey('0')">0</button>
+                <button type="button" class="key ghost" aria-label="Delete" onclick="deleteKey()">&#9003;</button>
+            </div>
+            <button type="submit" class="btn-submit" id="submitBtn" disabled>Unlock</button>
+        </form>
+    </div>
+
+    <script>
+        var pin = '';
+        var pinDots = document.getElementById('pinDots');
+        var submitBtn = document.getElementById('submitBtn');
+        var pinValue = document.getElementById('pinValue');
+        var form = document.getElementById('authForm');
+        var errorMsg = document.getElementById('errorMsg');
+        var dots = pinDots.querySelectorAll('i');
+
+        var hasError = '%%AUTH_ERROR%%' === 'error';
+        if (hasError) {
+            errorMsg.classList.add('show');
+            pinDots.classList.add('shake');
+            setTimeout(function() { pinDots.classList.remove('shake'); }, 500);
+        }
+
+        function updateDots() {
+            for (var i = 0; i < dots.length; i++) {
+                if (i < pin.length) {
+                    dots[i].classList.add('full');
+                } else {
+                    dots[i].classList.remove('full');
+                }
+            }
+            submitBtn.disabled = pin.length < 6;
+        }
+
+        function pressKey(digit) {
+            if (pin.length >= 6) return;
+            pin += digit;
+            updateDots();
+            if (pin.length === 6) {
+                pinValue.value = pin;
+                form.submit();
+            }
+        }
+
+        function deleteKey() {
+            if (pin.length === 0) return;
+            pin = pin.slice(0, -1);
+            updateDots();
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key >= '0' && e.key <= '9') {
+                pressKey(e.key);
+            } else if (e.key === 'Backspace') {
+                deleteKey();
+            } else if (e.key === 'Enter' && pin.length === 6) {
+                pinValue.value = pin;
+                form.submit();
+            }
+        });
+
+        document.addEventListener('paste', function(e) {
+            e.preventDefault();
+            var pasted = (e.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '').substring(0, 6);
+            pin = pasted;
+            updateDots();
+            if (pin.length === 6) {
+                pinValue.value = pin;
+                form.submit();
+            }
+        });
+
+        form.addEventListener('submit', function() {
+            pinValue.value = pin;
+        });
+    </script>
+</body>
+</html>

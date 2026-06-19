@@ -1,0 +1,15 @@
+        <div class="lobby-head">
+            <div class="sec-label">Select a deck</div>
+            <p class="lobby-hint">Press and hold a deck to start it, or hold GO for the next one.</p>
+        </div>
+        %%LOBBY_LIST%%
+        <div class="footer">
+            <form method="post" action="/start" class="grow" id="goForm">
+                <button class="go-btn hold" type="button" %%LOBBY_START_BTN%% data-hold="1500" data-submit="goForm" style="--chg-edge:#5af0a0;--chg-track:rgba(52,210,123,.22);--chg-glow:rgba(52,210,123,.7)">
+                    <span class="go-kicker">&#9711; HOLD</span><span class="go-main">Start &middot; %%LOBBY_NEXT_TEXT%%</span>
+                </button>
+            </form>
+            <form method="post" action="/exit" class="exit-wrap">
+                <button class="exit-btn hold" type="button" data-hold="2000" data-hint="Press and hold to exit" style="--chg-edge:#ff6b6d;--chg-track:rgba(255,77,79,.16);--chg-glow:rgba(255,77,79,.55)" title="Exit System">Exit</button>
+            </form>
+        </div>

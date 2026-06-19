@@ -66,7 +66,7 @@ function Watch-RunningPresentation {
                         Send-HttpResponse -Response $res -Content '{"ok":false,"auth":false}' -ContentType "application/json; charset=utf-8"
                     } else {
                         # 通常のページ遷移には従来どおり認証ページ(200)を返す
-                        $authHtml = $script:HtmlTemplates.AuthView -f "#0f2027", ""
+                        $authHtml = $script:HtmlTemplates.AuthView.Replace('%%BGCOLOR%%', '#0f2027').Replace('%%AUTH_ERROR%%', '')
                         Send-HttpResponse -Response $res -Content $authHtml
                     }
                     $script:ContextTask = Get-SafeContextAsync -Listener $Listener
