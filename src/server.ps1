@@ -44,6 +44,18 @@ function Invoke-WebRequestProcessor {
         return @{ ShouldContinue = $true; ResultAction = $ResultAction; ResultFile = $null; ActionSetTime = $null; ShuttingDown = $ShuttingDown; ShutdownDeadline = $ShutdownDeadline }
     }
 
+    # --- 認証済み GET /auth → / へリダイレクト ---
+    if ($isAuthenticated -and $url -eq "/auth" -and $req.HttpMethod -eq "GET") {
+        try {
+            $res.StatusCode = 302
+            $res.KeepAlive  = $false
+            $res.AddHeader("Location", "/")
+            $res.Close()
+        } catch {}
+        $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+        return @{ ShouldContinue = $false; ResultAction = $ResultAction; ResultFile = $null; ActionSetTime = $null; ShuttingDown = $ShuttingDown; ShutdownDeadline = $ShutdownDeadline }
+    }
+
     $resHtml          = $MainHtml
     $newResultAction  = $ResultAction
     $newResultFile    = $null
@@ -73,18 +85,21 @@ function Invoke-WebRequestProcessor {
             "/retry"  { $newResultAction = "Retry"; $newActionSetTime = Get-Date; $resHtml = $ProcessingHtml }
             "/lobby"  { $newResultAction = "Lobby"; $newActionSetTime = Get-Date; $resHtml = $ProcessingHtml }
             "/exit"   {
-                $res.StatusCode = 303
-                $res.KeepAlive  = $false
-                $res.AddHeader("Location", "/exit")
-                $res.Close()
+                $now = Get-Date
+                try {
+                    $res.StatusCode = 303
+                    $res.KeepAlive  = $false
+                    $res.AddHeader("Location", "/exit")
+                    $res.Close()
+                } catch {}
                 $script:ContextTask = Get-SafeContextAsync -Listener $Listener
                 return @{
                     ShouldContinue   = $false
                     ResultAction     = "Exit"
                     ResultFile       = $null
-                    ActionSetTime    = (Get-Date)
+                    ActionSetTime    = $now
                     ShuttingDown     = $true
-                    ShutdownDeadline = (Get-Date).AddSeconds(5)
+                    ShutdownDeadline = $now.AddSeconds(5)
                 }
             }
             "/select" {
@@ -95,7 +110,18 @@ function Invoke-WebRequestProcessor {
             }
         }
     } elseif ($url -eq "/exit") {
-        $resHtml = $ExitHtml
+        if ($ShuttingDown) {
+            $resHtml = $ExitHtml
+        } else {
+            try {
+                $res.StatusCode = 302
+                $res.KeepAlive  = $false
+                $res.AddHeader("Location", "/")
+                $res.Close()
+            } catch {}
+            $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+            return @{ ShouldContinue = $false; ResultAction = $ResultAction; ResultFile = $null; ActionSetTime = $null; ShuttingDown = $ShuttingDown; ShutdownDeadline = $ShutdownDeadline }
+        }
     }
 
     # --- 状態変化中のGETにはprocessing/exit画面を返す（他端末操作時のチカチカ防止） ---
