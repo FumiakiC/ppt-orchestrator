@@ -76,6 +76,7 @@ if (-not $pptApp) {
 }
 
 $pptApp.Visible = [Microsoft.Office.Core.MsoTriState]::msoTrue
+try { $pptApp.DisplayAlerts = 1 } catch {}   # 1 = ppAlertsNone（PIA非依存のため数値リテラル）
 
 # Bind only an instance WE spawned to a kill-on-close job (never the operator's own).
 Set-PptKillOnClose -PptApp $pptApp -PreExistingPids $preExistingPptPids
@@ -141,6 +142,7 @@ try {
             try {
                 $pptApp = New-Object -ComObject PowerPoint.Application
                 $pptApp.Visible = [Microsoft.Office.Core.MsoTriState]::msoTrue
+                try { $pptApp.DisplayAlerts = 1 } catch {}   # 1 = ppAlertsNone（PIA非依存のため数値リテラル）
                 Write-Host " [System] PowerPoint COM object recovered successfully." -ForegroundColor Green
                 Set-PptKillOnClose -PptApp $pptApp -PreExistingPids $recoveryPreexisting
             } catch {
