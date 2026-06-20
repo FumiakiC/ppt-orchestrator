@@ -98,9 +98,7 @@ function Watch-RunningPresentation {
                         $sr = New-Object System.IO.StreamReader($req.InputStream, $encoding)
                         try { $reqBody = $sr.ReadToEnd() } finally { $sr.Dispose() }
                     }
-                    if ($reqBody -and ([System.Web.HttpUtility]::UrlDecode($reqBody) -match 'cid=([A-Za-z0-9_\-]+)')) {
-                        $cid = $matches[1]
-                    }
+                    $cid = Get-CidFromBody $reqBody
                 } else {
                     $qcid = $req.QueryString['cid']
                     if ($qcid) { $cid = $qcid }

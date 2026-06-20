@@ -23,18 +23,14 @@ function Invoke-AuthHandler {
         Send-HttpResponse -Response $Response -Content $authHtml
         return $false
     }
-    if ($Body) {
-        if ([System.Web.HttpUtility]::UrlDecode($Body) -match "pin=([0-9]{6})") {
-            $submittedPin = $matches[1]
-            if ($submittedPin -eq $script:AuthPin.ToString()) {
-                $script:AuthFailedTracker.Remove($ip)
-                $Response.Headers.Add("Set-Cookie", "SessionToken=$script:SessionToken; HttpOnly; Path=/; SameSite=Strict")
-                $Response.StatusCode = 302
-                $Response.Headers.Add("Location", "/")
-                Send-HttpResponse -Response $Response -Content ""
-                return $true
-            }
-        }
+    $submittedPin = Get-PinFromBody $Body
+    if ($submittedPin -ne '' -and $submittedPin -eq $script:AuthPin.ToString()) {
+        $script:AuthFailedTracker.Remove($ip)
+        $Response.Headers.Add("Set-Cookie", "SessionToken=$script:SessionToken; HttpOnly; Path=/; SameSite=Strict")
+        $Response.StatusCode = 302
+        $Response.Headers.Add("Location", "/")
+        Send-HttpResponse -Response $Response -Content ""
+        return $true
     }
     $script:AuthFailedTracker[$ip] = (Get-Date)
     $authHtml = $script:HtmlTemplates.AuthView.Replace('%%BGCOLOR%%', '#0f2027').Replace('%%AUTH_ERROR%%', 'error')
