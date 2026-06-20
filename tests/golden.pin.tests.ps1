@@ -1,5 +1,5 @@
 # =============================================================================
-#  tests/golden.pin.tests.ps1  —  PIN 抽出 の期待入出力テーブル（層2 pending）
+#  tests/golden.pin.tests.ps1  —  PIN 抽出 の期待入出力テーブル（層2 有効）
 #
 #  対象ロジック（src/utils.ps1 Get-PinFromBody）:
 #    if ([System.Web.HttpUtility]::UrlDecode($Body) -match "pin=([0-9]{6})") { return $matches[1] }
