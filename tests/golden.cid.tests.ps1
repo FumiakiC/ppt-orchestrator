@@ -1,5 +1,5 @@
 # =============================================================================
-#  tests/golden.cid.tests.ps1  —  cid 抽出 の期待入出力テーブル（層2 pending）
+#  tests/golden.cid.tests.ps1  —  cid 抽出 の期待入出力テーブル（層2 有効）
 #
 #  対象ロジック（src/utils.ps1 Get-CidFromBody）:
 #    $decoded = [System.Web.HttpUtility]::UrlDecode($Body)

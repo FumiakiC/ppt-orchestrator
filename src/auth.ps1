@@ -24,7 +24,7 @@ function Invoke-AuthHandler {
         return $false
     }
     $submittedPin = Get-PinFromBody $Body
-    if ($submittedPin -ne '' -and $submittedPin -eq $script:AuthPin.ToString()) {
+    if ($submittedPin -ne '' -and $submittedPin -eq [string]$script:AuthPin) {
         $script:AuthFailedTracker.Remove($ip)
         $Response.Headers.Add("Set-Cookie", "SessionToken=$script:SessionToken; HttpOnly; Path=/; SameSite=Strict")
         $Response.StatusCode = 302
