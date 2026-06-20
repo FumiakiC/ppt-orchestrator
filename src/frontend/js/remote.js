@@ -19,7 +19,7 @@
     function applyBounds(){ if(!armed)return; var nb=pad.querySelector('[data-cmd="next"]'), pb=pad.querySelector('[data-cmd="prev"]'); if(nb)nb.disabled=!!curAtEnd; if(pb)pb.disabled=(curTotal>0&&curPos<=1); }
     function setArmed(on){ armed=on; for(var i=0;i<btns.length;i++)btns[i].disabled=!on; if(container)container.classList.toggle('armed',on); applyBounds(); }
     function setProj(b,w){ if(blkBtn)blkBtn.classList.toggle('act',!!b); if(whtBtn)whtBtn.classList.toggle('act',!!w); }
-    function renderLock(st){ lockOn=!!st.lock; var mine=!!st.mine; lockSw.classList.toggle('on',mine); lockSw.setAttribute('aria-checked',mine?'true':'false');
+    function renderLock(st){ if(!lockSw || !lockLbl || !lockOtherMsg || !stealBtn) return; lockOn=!!st.lock; var mine=!!st.mine; lockSw.classList.toggle('on',mine); lockSw.setAttribute('aria-checked',mine?'true':'false');
         if(mine){ lockLbl.textContent='YOU HAVE CONTROL'; lockLbl.style.color='var(--accent)'; lockOtherMsg.textContent='You have control of this presentation.'; stealBtn.disabled=true; setArmed(true); }
         else if(lockOn){ lockLbl.textContent='LOCKED BY ANOTHER'; lockLbl.style.color='var(--standby)'; lockOtherMsg.textContent='This presentation is being controlled by another device.'; stealBtn.disabled=false; setArmed(false); }
         else { lockLbl.textContent='REMOTE CONTROL LOCK'; lockLbl.style.color=''; lockOtherMsg.textContent='Tap the switch above to take control.'; stealBtn.disabled=true; setArmed(false); }
