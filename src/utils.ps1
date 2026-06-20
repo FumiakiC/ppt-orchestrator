@@ -113,3 +113,30 @@ function Get-PinFromBody {
     if ($Body -and ([System.Web.HttpUtility]::UrlDecode($Body) -match 'pin=([0-9]{6})')) { return $matches[1] }
     return ''
 }
+
+function Read-RequestBody {
+    # $MaxChars: 文字数ベースの上限。DoS閾値として十分（正規利用は数百バイト、最悪のマルチバイトでも
+    # 数十KBに収まりメモリ枯渇を防ぐ）。厳密なバイト制限は本PRのスコープ外。
+    param([System.Net.HttpListenerRequest]$Request, [int]$MaxChars = 8192)
+    if ($null -eq $Request -or -not $Request.HasEntityBody) { return '' }
+    $sr = $null
+    try {
+        $encoding = if ($Request.ContentEncoding) { $Request.ContentEncoding } else { [System.Text.Encoding]::UTF8 }
+        $sr = New-Object System.IO.StreamReader($Request.InputStream, $encoding)
+        $limit = $MaxChars + 1
+        $buf   = New-Object char[] $limit
+        $total = 0
+        while ($total -lt $limit) {
+            $n = $sr.Read($buf, $total, $limit - $total)
+            if ($n -le 0) { break }
+            $total += $n
+        }
+        if ($total -gt $MaxChars) { return '' }
+        if ($total -le 0) { return '' }
+        return (-join $buf[0..($total - 1)])
+    } catch {
+        return ''
+    } finally {
+        if ($null -ne $sr) { $sr.Dispose() }
+    }
+}
