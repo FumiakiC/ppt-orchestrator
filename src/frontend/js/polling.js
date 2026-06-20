@@ -44,6 +44,7 @@
                     if (overlay) overlay.classList.remove('active');
                     var __ms = Date.now() - __t0;
                     if (window.setConn) window.setConn(__ms > 600 ? 'slow' : 'ok', __ms);
+                    if (!r.ok) throw new Error('http ' + r.status);
                     return r.text();
                 })
                 .then(function(status) {

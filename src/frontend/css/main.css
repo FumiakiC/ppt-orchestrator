@@ -220,7 +220,7 @@
         #holdhint::before { content:""; width:13px; height:13px; border-radius:50%; border:2px solid var(--accent); border-right-color:transparent; animation:spin .9s linear infinite; }
         /* ===== hold-to-charge ring (shared by all pages via HtmlHeader) ===== */
         @property --chgp { syntax:"<number>"; inherits:false; initial-value:0; }
-        .hold { position:relative; }
+        .hold { position:relative; touch-action:none; -webkit-user-select:none; user-select:none; }
         .hold::before {
             content:""; position:absolute; inset:0; border-radius:inherit; padding:3.5px;
             background:conic-gradient(var(--chg-edge, #fff) 0 calc(var(--chgp, 0) * 1turn), var(--chg-track, rgba(255,255,255,.16)) calc(var(--chgp, 0) * 1turn) 1turn);
