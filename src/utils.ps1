@@ -102,12 +102,14 @@ function Get-HtmlHeader {
     return $script:HtmlTemplates.HtmlHeader.Replace('%%TITLE%%', [string]$Title).Replace('%%BGCOLOR%%', [string]$BgColor)
 }
 
-function Get-CidFromBody([string]$Body) {
+function Get-CidFromBody {
+    param([string]$Body)
     if ($Body -and ([System.Web.HttpUtility]::UrlDecode($Body) -match 'cid=([A-Za-z0-9_\-]+)')) { return $matches[1] }
     return ''
 }
 
-function Get-PinFromBody([string]$Body) {
+function Get-PinFromBody {
+    param([string]$Body)
     if ($Body -and ([System.Web.HttpUtility]::UrlDecode($Body) -match 'pin=([0-9]{6})')) { return $matches[1] }
     return ''
 }
