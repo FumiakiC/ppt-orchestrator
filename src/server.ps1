@@ -73,11 +73,19 @@ function Invoke-WebRequestProcessor {
             "/retry"  { $newResultAction = "Retry"; $newActionSetTime = Get-Date; $resHtml = $ProcessingHtml }
             "/lobby"  { $newResultAction = "Lobby"; $newActionSetTime = Get-Date; $resHtml = $ProcessingHtml }
             "/exit"   {
-                $newResultAction     = "Exit"
-                $newActionSetTime    = Get-Date
-                $newShuttingDown     = $true
-                $newShutdownDeadline = (Get-Date).AddSeconds(5)
-                $resHtml             = $ExitHtml
+                $res.StatusCode = 303
+                $res.KeepAlive  = $false
+                $res.AddHeader("Location", "/exit")
+                $res.Close()
+                $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+                return @{
+                    ShouldContinue   = $false
+                    ResultAction     = "Exit"
+                    ResultFile       = $null
+                    ActionSetTime    = (Get-Date)
+                    ShuttingDown     = $true
+                    ShutdownDeadline = (Get-Date).AddSeconds(5)
+                }
             }
             "/select" {
                 if ([System.Web.HttpUtility]::UrlDecode($body) -match "filename=(.*)") {
