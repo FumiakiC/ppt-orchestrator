@@ -113,3 +113,27 @@ function Get-PinFromBody {
     if ($Body -and ([System.Web.HttpUtility]::UrlDecode($Body) -match 'pin=([0-9]{6})')) { return $matches[1] }
     return ''
 }
+
+function Read-RequestBody {
+    param([System.Net.HttpListenerRequest]$Request, [int]$MaxBytes = 8192)
+    if (-not $Request.HasEntityBody) { return '' }
+    $encoding = if ($Request.ContentEncoding) { $Request.ContentEncoding } else { [System.Text.Encoding]::UTF8 }
+    $sr = New-Object System.IO.StreamReader($Request.InputStream, $encoding)
+    try {
+        $limit = $MaxBytes + 1
+        $buf   = New-Object char[] $limit
+        $total = 0
+        while ($total -lt $limit) {
+            $n = $sr.Read($buf, $total, $limit - $total)
+            if ($n -le 0) { break }
+            $total += $n
+        }
+        if ($total -gt $MaxBytes) { return '' }
+        if ($total -le 0) { return '' }
+        return (-join $buf[0..($total - 1)])
+    } catch {
+        return ''
+    } finally {
+        $sr.Dispose()
+    }
+}

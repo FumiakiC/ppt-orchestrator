@@ -74,16 +74,7 @@ function Watch-RunningPresentation {
                 }
 
                 if ($path -eq "/auth" -and $req.HttpMethod -eq "POST") {
-                    $authBody = $null
-                    if ($req.HasEntityBody) {
-                        $encoding = if ($req.ContentEncoding) { $req.ContentEncoding } else { [System.Text.Encoding]::UTF8 }
-                        $sr = New-Object System.IO.StreamReader($req.InputStream, $encoding)
-                        try {
-                            $authBody = $sr.ReadToEnd()
-                        } finally {
-                            $sr.Dispose()
-                        }
-                    }
+                    $authBody = Read-RequestBody -Request $req
                     Invoke-AuthHandler -Request $req -Response $res -Body $authBody | Out-Null
                     $script:ContextTask = Get-SafeContextAsync -Listener $Listener
                     continue
@@ -92,12 +83,7 @@ function Watch-RunningPresentation {
                 # ---- クライアントID(cid) の抽出（POSTボディ or GETクエリ） ----
                 $cid = ''
                 if ($req.HttpMethod -eq "POST") {
-                    $reqBody = $null
-                    if ($req.HasEntityBody) {
-                        $encoding = if ($req.ContentEncoding) { $req.ContentEncoding } else { [System.Text.Encoding]::UTF8 }
-                        $sr = New-Object System.IO.StreamReader($req.InputStream, $encoding)
-                        try { $reqBody = $sr.ReadToEnd() } finally { $sr.Dispose() }
-                    }
+                    $reqBody = Read-RequestBody -Request $req
                     $cid = Get-CidFromBody $reqBody
                 } else {
                     $qcid = $req.QueryString['cid']
