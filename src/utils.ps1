@@ -101,3 +101,13 @@ function Get-HtmlHeader {
     param([string]$Title, [string]$BgColor = "#1a1a1a")
     return $script:HtmlTemplates.HtmlHeader.Replace('%%TITLE%%', [string]$Title).Replace('%%BGCOLOR%%', [string]$BgColor)
 }
+
+function Get-CidFromBody([string]$Body) {
+    if ($Body -and ([System.Web.HttpUtility]::UrlDecode($Body) -match 'cid=([A-Za-z0-9_\-]+)')) { return $matches[1] }
+    return ''
+}
+
+function Get-PinFromBody([string]$Body) {
+    if ($Body -and ([System.Web.HttpUtility]::UrlDecode($Body) -match 'pin=([0-9]{6})')) { return $matches[1] }
+    return ''
+}

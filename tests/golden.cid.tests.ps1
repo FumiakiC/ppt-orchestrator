@@ -1,12 +1,9 @@
 # =============================================================================
 #  tests/golden.cid.tests.ps1  —  cid 抽出 の期待入出力テーブル（層2 pending）
 #
-#  TODO Phase 1.3: Get-CidFromBody が src/ から純粋関数として抽出されたら、
-#                  下記コメント内のアサーションを有効化して Write-TestPending を削除する。
-#
-#  対象ロジック（現状 src/com-handler.ps1 にインライン）:
-#    $decoded = [System.Web.HttpUtility]::UrlDecode($reqBody)
-#    if ($decoded -match 'cid=([A-Za-z0-9_\-]+)') { $cid = $matches[1] } else { $cid = '' }
+#  対象ロジック（src/utils.ps1 Get-CidFromBody）:
+#    $decoded = [System.Web.HttpUtility]::UrlDecode($Body)
+#    if ($decoded -match 'cid=([A-Za-z0-9_\-]+)') { return $matches[1] } else { return '' }
 #
 #  現状仕様として固定する挙動（このファイル内の期待表 [D]）:
 #    'cid=abc123'      -> 'abc123'
@@ -18,23 +15,12 @@
 #    'foo=bar'         -> ''           # cid キーなし
 # =============================================================================
 
-Write-TestPending '[D] cid=abc123 -> abc123'
-# Assert-Equal 'abc123' (Get-CidFromBody 'cid=abc123')      '[D] cid=abc123'
+. (Resolve-SrcFunction -Path "$PSScriptRoot/../src/utils.ps1" -Name 'Get-CidFromBody')
 
-Write-TestPending '[D] cid=a_b-c -> a_b-c'
-# Assert-Equal 'a_b-c'  (Get-CidFromBody 'cid=a_b-c')       '[D] cid=a_b-c'
-
-Write-TestPending '[D] x=1&cid=ZZ9 -> ZZ9'
-# Assert-Equal 'ZZ9'    (Get-CidFromBody 'x=1&cid=ZZ9')     '[D] x=1&cid=ZZ9'
-
-Write-TestPending '[D] CID=abc -> abc (case-insensitive)'
-# Assert-Equal 'abc'    (Get-CidFromBody 'CID=abc')          '[D] CID=abc'
-
-Write-TestPending '[D] cid=ab%E6%97%A5 -> ab (non-ASCII truncated)'
-# Assert-Equal 'ab'     (Get-CidFromBody 'cid=ab%E6%97%A5') '[D] cid=ab%E6%97%A5'
-
-Write-TestPending '[D] cid= -> empty string'
-# Assert-Equal ''       (Get-CidFromBody 'cid=')             '[D] cid='
-
-Write-TestPending '[D] foo=bar -> empty string (no cid key)'
-# Assert-Equal ''       (Get-CidFromBody 'foo=bar')          '[D] foo=bar'
+Assert-Equal 'abc123' (Get-CidFromBody 'cid=abc123')      '[D] cid=abc123'
+Assert-Equal 'a_b-c'  (Get-CidFromBody 'cid=a_b-c')       '[D] cid=a_b-c'
+Assert-Equal 'ZZ9'    (Get-CidFromBody 'x=1&cid=ZZ9')     '[D] x=1&cid=ZZ9'
+Assert-Equal 'abc'    (Get-CidFromBody 'CID=abc')          '[D] CID=abc'
+Assert-Equal 'ab'     (Get-CidFromBody 'cid=ab%E6%97%A5') '[D] cid=ab%E6%97%A5'
+Assert-Equal ''       (Get-CidFromBody 'cid=')             '[D] cid='
+Assert-Equal ''       (Get-CidFromBody 'foo=bar')          '[D] foo=bar'
