@@ -126,7 +126,7 @@ try {
 
         # --- B. プレゼン実行 ---
         $presentation = $null
-        $status       = "NormalEnd"
+        $status       = "SlideshowExited"
 
         # PowerPointプロセスの生存確認と自動復旧
         try {
@@ -164,32 +164,42 @@ try {
             if ($status -eq "ManualStop") {
                 Write-Host " >> Manually stopped." -ForegroundColor Yellow
                 try { $presentation.Close() } catch {}
-            }
+                $targetFileItem = Move-ToFinishIfPending -TargetFileItem $targetFileItem -FinishFolderPath $finishFolderPath -Presentation $presentation
 
-            # --- C. 移動判定 ---
-            if ($targetFileItem.DirectoryName -ne $finishFolderPath) {
-                try {
-                    Write-Host " >> Moving to finished folder..." -ForegroundColor Gray
-                    $targetFileItem = Move-Item -LiteralPath $targetFileItem.FullName -Destination $finishFolderPath -Force -PassThru
-                } catch { Write-Warning "Move failed: $_" }
-            }
-
-            # --- D. 終了後の画面遷移 ---
-            if ($status -eq "ManualStop") {
                 $autoPlayTarget = $null
                 continue
             }
 
-            $activeFiles = Get-PptFiles -Path $TargetFolderPath
-            $nextName    = if ($activeFiles) { $activeFiles[0].Name } else { "" }
+            if ($status -eq "ClosedByUser") {
+                $targetFileItem = Move-ToFinishIfPending -TargetFileItem $targetFileItem -FinishFolderPath $finishFolderPath -Presentation $presentation
+                $autoPlayTarget = $null
+                continue
+            }
+
+            # SlideshowExited path: defer move until explicit completion action.
+            $activeFiles   = Get-PptFiles -Path $TargetFolderPath
+            $nextCandidate = $activeFiles | Where-Object { $_.FullName -ne $targetFileItem.FullName } | Select-Object -First 1
+            $nextName      = if ($nextCandidate) { $nextCandidate.Name } else { "" }
 
             $postResult = Get-UserAction -Mode "Dialog" -CurrentFileName $targetFileItem.Name -NextFileName $nextName -Listener $listener
 
             switch ($postResult.Action) {
-                "Next"  { if ($activeFiles) { $autoPlayTarget = $activeFiles[0] } }
-                "Retry" { $autoPlayTarget = $targetFileItem }
-                "Lobby" { $autoPlayTarget = $null }
-                "Exit"  { $exitLoop = $true }
+                "Next"  {
+                    $targetFileItem = Move-ToFinishIfPending -TargetFileItem $targetFileItem -FinishFolderPath $finishFolderPath -Presentation $presentation
+                    $activeFiles = Get-PptFiles -Path $TargetFolderPath
+                    $autoPlayTarget = if ($activeFiles) { $activeFiles[0] } else { $null }
+                }
+                "Retry" {
+                    $autoPlayTarget = $targetFileItem
+                }
+                "Lobby" {
+                    $targetFileItem = Move-ToFinishIfPending -TargetFileItem $targetFileItem -FinishFolderPath $finishFolderPath -Presentation $presentation
+                    $autoPlayTarget = $null
+                }
+                "Exit"  {
+                    $targetFileItem = Move-ToFinishIfPending -TargetFileItem $targetFileItem -FinishFolderPath $finishFolderPath -Presentation $presentation
+                    $exitLoop = $true
+                }
             }
 
         } catch {
