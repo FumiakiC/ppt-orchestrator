@@ -187,7 +187,10 @@ try {
                 "Next"  {
                     $targetFileItem = Move-ToFinishIfPending -TargetFileItem $targetFileItem -FinishFolderPath $finishFolderPath -Presentation $presentation
                     $activeFiles = Get-PptFiles -Path $TargetFolderPath
-                    $autoPlayTarget = if ($activeFiles) { $activeFiles[0] } else { $null }
+                    $autoPlayTarget = if ($activeFiles) {
+                        $next = $activeFiles | Where-Object { $_.FullName -ne $targetFileItem.FullName } | Select-Object -First 1
+                        if ($next) { $next } else { $activeFiles[0] }
+                    } else { $null }
                 }
                 "Retry" {
                     $autoPlayTarget = $targetFileItem

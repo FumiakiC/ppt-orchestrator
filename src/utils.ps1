@@ -58,7 +58,7 @@ function Move-ToFinishIfPending {
         [object]$Presentation
     )
 
-    if (-not $TargetFileItem) { return $TargetFileItem }
+    if (-not $TargetFileItem -or -not $TargetFileItem.FullName) { return $TargetFileItem }
 
     # Idempotent guard: skip when source no longer exists or is already in finish folder.
     if (-not (Test-Path -LiteralPath $TargetFileItem.FullName)) { return $TargetFileItem }
