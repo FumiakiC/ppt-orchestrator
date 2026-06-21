@@ -48,6 +48,71 @@
     reqWake();
     document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible'){ reqWake(); pollState(); } });
 
+    function initNowNameMarquee(){
+        var nameEl=document.querySelector('.np .now-name');
+        if(!nameEl)return;
+        var track=nameEl.querySelector('.nn-track');
+        var seg=track&&track.querySelector('.nn-seg');
+        if(!track || !seg)return;
+
+        var SPEED_PX_PER_SEC=45;
+        var START_DELAY=900;
+        var MIN_DUR=4000;
+        var LOOP_PAUSE_MS=3000;
+        var rm=window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+        var anim=null;
+        var clone=null;
+        var ro=null;
+
+        function teardown(){
+            if(anim){ anim.cancel(); anim=null; }
+            if(clone && clone.parentNode===track){ track.removeChild(clone); }
+            clone=null;
+            nameEl.classList.remove('marquee');
+        }
+
+        function evaluate(){
+            teardown();
+            if(rm && rm.matches) return;
+            if(nameEl.scrollWidth<=nameEl.clientWidth+1) return;
+
+            nameEl.classList.add('marquee');
+            clone=seg.cloneNode(true);
+            clone.setAttribute('aria-hidden','true');
+            track.appendChild(clone);
+
+            var shift=seg.getBoundingClientRect().width;
+            if(!(shift>0)){ teardown(); return; }
+
+            var moveDuration=Math.max(MIN_DUR, (shift / SPEED_PX_PER_SEC) * 1000);
+            var duration=moveDuration+LOOP_PAUSE_MS;
+            var moveOffset=moveDuration/duration;
+            anim=track.animate(
+                [
+                    { transform:'translateX(0)', offset:0 },
+                    { transform:'translateX(' + (-shift) + 'px)', offset:moveOffset },
+                    { transform:'translateX(' + (-shift) + 'px)', offset:1 }
+                ],
+                { duration:duration, iterations:Infinity, easing:'linear', delay:START_DELAY }
+            );
+        }
+
+        if('ResizeObserver' in window){
+            ro=new ResizeObserver(function(){ evaluate(); });
+            ro.observe(nameEl);
+        } else {
+            window.addEventListener('resize', evaluate);
+        }
+        if(document.fonts && document.fonts.ready){ document.fonts.ready.then(function(){ evaluate(); }); }
+        if(rm){
+            if(rm.addEventListener){ rm.addEventListener('change', evaluate); }
+            else if(rm.addListener){ rm.addListener(evaluate); }
+        }
+
+        evaluate();
+    }
+
+    initNowNameMarquee();
     requestAnimationFrame(paint); pollState(); setInterval(pollState,1200);
     window.startPolling(['running'], '/', { defaultDelay: 1500 });
 })();
