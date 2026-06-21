@@ -77,11 +77,22 @@
         .np .ctl-btn.danger { display:flex; align-items:center; justify-content:center; }
 
         @media (max-width:759px) {
-            .np .npgrid { grid-template-columns:1fr; }
+            /* 上段=残り全部 / 下段(REMOTE CONTROL LOCK 以下)=内容なり固定 */
+            .np .npgrid { grid-template-columns:1fr; grid-template-rows:1fr auto; min-height:0; }
             .np .np-divider { display:none; }
-            .np .np-monitor { padding:26px 18px 4px; }
+
+            /* 上段(モニタ)：自身の高さ(cqh)基準でタイポ可変。溢れは上段側のみで吸収 */
+            .np .np-monitor {
+                min-height:0; container-type:size; overflow:hidden;
+                padding:clamp(8px,3vh,26px) 18px clamp(2px,1vh,6px); gap:clamp(1px,0.6vh,4px);
+            }
+            .np .onair    { font-size:clamp(10px,2.4cqh,12px); padding:clamp(5px,1.4cqh,7px) clamp(11px,3cqh,15px); }
+            .np .now-name { font-size:clamp(0.95rem,7cqh,1.45rem); margin:clamp(4px,3cqh,20px) 0 2px; }
+            .np .now-timer{ font-size:clamp(28px,22cqh,58px); margin:clamp(4px,3cqh,22px) 0 2px; }
+            .np .pos      { font-size:clamp(11px,2.6cqh,14px); margin-top:clamp(2px,1cqh,6px); }
+
+            /* ===== REMOTE CONTROL LOCK 以下：main と同一（変更しない） ===== */
             .np .np-controls { padding:12px 18px 28px; gap:14px; max-width:480px; }
-            .np .now-timer { font-size:46px; }
         }
     </style>
     <script>
