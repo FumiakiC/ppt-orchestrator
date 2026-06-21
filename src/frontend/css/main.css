@@ -110,7 +110,7 @@
         .go-btn:active { transform:scale(.985); }
         .go-btn:disabled { filter:grayscale(.6); cursor:not-allowed; box-shadow:none; }
         .go-kicker { font-size:11px; font-weight:800; letter-spacing:2px; background:rgba(0,0,0,.18); padding:4px 9px; border-radius:7px; }
-        .go-main { font-size:15px; font-weight:700; letter-spacing:.3px; flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+        .go-main { font-size:15px; font-weight:700; letter-spacing:.3px; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
         .go-btn::after { content:""; position:absolute; inset:0; border-radius:inherit; box-shadow:0 0 0 0 var(--go-glow); animation:goPulse 2.6s var(--ease) infinite; }
         .exit-wrap { margin:0; display:flex; }
         .exit-btn {
@@ -145,7 +145,7 @@
         }
         .done-mark svg { width:30px; height:30px; }
         .dlg-title { font-size:1.25rem; font-weight:650; }
-        .dlg-name { font-family:var(--mono); font-size:12.5px; color:var(--txt-dim); margin-top:8px; overflow-wrap:normal; width:100%; min-width:0; align-self:stretch; /* width:100%+align-self:stretch gives overflow:hidden a definite boundary; .stage align-items:center needs explicit stretch to pin cross-axis */ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .dlg-name { font-family:var(--mono); font-size:12.5px; color:var(--txt-dim); margin-top:8px; overflow-wrap:normal; min-width:0; align-self:stretch; /* align-self:stretch pins cross-axis under .stage align-items:center for ellipsis */ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .post-stack { display:flex; flex-direction:column; gap:11px; width:100%; max-width:340px; margin-top:28px; }
         .post-stack form { margin:0; min-width:0; /* truncation chain: let dialog button text shrink for ellipsis */ }
         .pp-btn {
@@ -247,9 +247,9 @@
         .done-mark { box-shadow:0 0 26px -6px rgba(52,210,123,.5); }
         .pp-next { border:1px solid rgba(52,210,123,.5) !important; color:var(--go) !important; background:rgba(52,210,123,.08) !important; box-shadow:0 0 0 1px rgba(52,210,123,.10), 0 0 26px -10px var(--go) !important; text-shadow:0 0 14px rgba(52,210,123,.4); display:flex; flex-direction:row; align-items:center; justify-content:center; gap:11px; }
         .pp-next .pp-kicker { font:800 10.5px var(--sans); letter-spacing:2px; color:var(--go); background:rgba(52,210,123,.14); border:1px solid rgba(52,210,123,.4); padding:4px 9px; border-radius:8px; white-space:nowrap; }
-        .pp-next .pp-main { display:flex; flex-direction:column; align-items:flex-start; gap:1px; line-height:1.18; text-align:left; min-width:0; flex:1; }
+        .pp-next .pp-main { display:flex; flex-direction:column; align-items:flex-start; gap:1px; line-height:1.18; text-align:left; min-width:0; }
         .pp-next .pp-main-t { font:700 14.5px var(--sans); color:var(--go); }
-        .pp-next .pp-main-d { font:500 11px var(--mono); color:rgba(122,230,170,.72); text-shadow:none; overflow-wrap:normal; min-width:0; width:100%; /* align-items:flex-start flex-column needs explicit cross-axis bound */ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .pp-next .pp-main-d { font:500 11px var(--mono); color:rgba(122,230,170,.72); text-shadow:none; overflow-wrap:normal; min-width:0; align-self:stretch; /* align-self:stretch pins cross-axis under .pp-main align-items:flex-start for ellipsis */ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .pp-next:disabled { opacity:.45; filter:none; box-shadow:none !important; text-shadow:none; }
         .pp-retry { background:rgba(245,166,35,.07) !important; color:var(--standby) !important; border-color:rgba(245,166,35,.45) !important; box-shadow:0 0 22px -12px rgba(245,166,35,.6); text-shadow:0 0 12px rgba(245,166,35,.3); }
         .pp-lobby { background:var(--panel-2); color:var(--txt); border-color:var(--line); }
