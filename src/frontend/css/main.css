@@ -46,9 +46,9 @@
         .container {
             width:100%; max-width:600px; margin:0 auto;
             flex:1; min-height:0; display:flex; flex-direction:column;
-            overflow:hidden; position:relative; z-index:10;
+            overflow:hidden; position:relative; z-index:10; min-width:0; /* truncation chain root: flex item must allow shrink so children's width:100%/max-width take effect */
         }
-        .stage { flex:1; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:26px; }
+        .stage { flex:1; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:26px; min-width:0; /* truncation chain: confine children to .container width so dlg-name/post-stack can ellipsis; harmless on text-light stages (nothing to shrink); NowPlaying overrides via .stage.np */ }
         h1 { font-size:1.5rem; font-weight:650; margin:0; letter-spacing:.2px; }
         h2 { font-size:1.2rem; font-weight:600; margin:0; }
         p { color:var(--txt-dim); font-size:.92rem; margin:6px 0; line-height:1.55; }
@@ -84,7 +84,7 @@
             flex:0 0 auto; width:32px; height:32px; border-radius:9px; display:grid; place-items:center;
             font-family:var(--mono); font-size:13px; background:var(--bg-2); border:1px solid var(--line); color:var(--standby);
         }
-        .deck-name { flex:1; min-width:0; font-size:14px; font-weight:550; overflow-wrap:anywhere; }
+        .deck-name { flex:1; min-width:0; font-size:14px; font-weight:550; overflow-wrap:normal; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .deck-cue { flex:0 0 auto; color:var(--standby); font-size:12px; opacity:.7; }
         .deck.finished { opacity:.6; }
         .deck.finished:hover { transform:none; border-color:var(--line); }
@@ -99,7 +99,7 @@
             border-top:1px solid var(--line-soft);
             background:linear-gradient(180deg,rgba(11,13,16,.35),var(--bg));
         }
-        .footer .grow { flex:1; margin:0; }
+        .footer .grow { flex:1; margin:0; min-width:0; /* truncation chain: let the GO button's text child shrink for ellipsis */ }
         .go-btn {
             width:100%; border:none; border-radius:14px; cursor:pointer; color:#06210f;
             padding:16px; font-family:var(--sans); display:flex; align-items:center; justify-content:center; gap:11px;
@@ -110,7 +110,7 @@
         .go-btn:active { transform:scale(.985); }
         .go-btn:disabled { filter:grayscale(.6); cursor:not-allowed; box-shadow:none; }
         .go-kicker { font-size:11px; font-weight:800; letter-spacing:2px; background:rgba(0,0,0,.18); padding:4px 9px; border-radius:7px; }
-        .go-main { font-size:15px; font-weight:700; letter-spacing:.3px; }
+        .go-main { font-size:15px; font-weight:700; letter-spacing:.3px; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
         .go-btn::after { content:""; position:absolute; inset:0; border-radius:inherit; box-shadow:0 0 0 0 var(--go-glow); animation:goPulse 2.6s var(--ease) infinite; }
         .exit-wrap { margin:0; display:flex; }
         .exit-btn {
@@ -126,7 +126,7 @@
             padding:7px 15px; border-radius:999px; border:1px solid rgba(255,77,79,.4); background:rgba(255,77,79,.08);
         }
         .onair i { width:9px; height:9px; border-radius:50%; background:var(--live); box-shadow:0 0 12px var(--live); }
-        .now-name { font-size:1.45rem; font-weight:650; margin:24px 0 6px; line-height:1.35; max-width:92%; overflow-wrap:anywhere; }
+        .now-name { font-size:1.45rem; font-weight:650; margin:24px 0 6px; line-height:1.35; max-width:100%; min-width:0; overflow-wrap:normal; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .now-sub { font-family:var(--mono); font-size:12px; color:var(--txt-faint); }
         .now-timer { font-family:var(--mono); font-size:52px; font-weight:300; letter-spacing:2px; margin:26px 0 4px; font-variant-numeric:tabular-nums; color:#cfd6dd; }
         .now-actions { margin:34px 0 0; width:100%; max-width:340px; }
@@ -145,9 +145,9 @@
         }
         .done-mark svg { width:30px; height:30px; }
         .dlg-title { font-size:1.25rem; font-weight:650; }
-        .dlg-name { font-family:var(--mono); font-size:12.5px; color:var(--txt-dim); margin-top:8px; overflow-wrap:anywhere; max-width:90%; }
+        .dlg-name { font-family:var(--mono); font-size:12.5px; color:var(--txt-dim); margin-top:8px; overflow-wrap:normal; min-width:0; align-self:stretch; /* align-self:stretch pins cross-axis under .stage align-items:center for ellipsis */ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .post-stack { display:flex; flex-direction:column; gap:11px; width:100%; max-width:340px; margin-top:28px; }
-        .post-stack form { margin:0; }
+        .post-stack form { margin:0; min-width:0; /* truncation chain: let dialog button text shrink for ellipsis */ }
         .pp-btn {
             width:100%; padding:15px; border-radius:14px; cursor:pointer; font-family:var(--sans);
             font-size:15px; font-weight:650; border:1px solid var(--line); transition:.14s var(--ease);
@@ -247,9 +247,9 @@
         .done-mark { box-shadow:0 0 26px -6px rgba(52,210,123,.5); }
         .pp-next { border:1px solid rgba(52,210,123,.5) !important; color:var(--go) !important; background:rgba(52,210,123,.08) !important; box-shadow:0 0 0 1px rgba(52,210,123,.10), 0 0 26px -10px var(--go) !important; text-shadow:0 0 14px rgba(52,210,123,.4); display:flex; flex-direction:row; align-items:center; justify-content:center; gap:11px; }
         .pp-next .pp-kicker { font:800 10.5px var(--sans); letter-spacing:2px; color:var(--go); background:rgba(52,210,123,.14); border:1px solid rgba(52,210,123,.4); padding:4px 9px; border-radius:8px; white-space:nowrap; }
-        .pp-next .pp-main { display:flex; flex-direction:column; align-items:flex-start; gap:1px; line-height:1.18; text-align:left; }
+        .pp-next .pp-main { display:flex; flex-direction:column; align-items:flex-start; gap:1px; line-height:1.18; text-align:left; min-width:0; }
         .pp-next .pp-main-t { font:700 14.5px var(--sans); color:var(--go); }
-        .pp-next .pp-main-d { font:500 11px var(--mono); color:rgba(122,230,170,.72); text-shadow:none; overflow-wrap:anywhere; }
+        .pp-next .pp-main-d { font:500 11px var(--mono); color:rgba(122,230,170,.72); text-shadow:none; overflow-wrap:normal; min-width:0; align-self:stretch; /* align-self:stretch pins cross-axis under .pp-main align-items:flex-start for ellipsis */ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .pp-next:disabled { opacity:.45; filter:none; box-shadow:none !important; text-shadow:none; }
         .pp-retry { background:rgba(245,166,35,.07) !important; color:var(--standby) !important; border-color:rgba(245,166,35,.45) !important; box-shadow:0 0 22px -12px rgba(245,166,35,.6); text-shadow:0 0 12px rgba(245,166,35,.3); }
         .pp-lobby { background:var(--panel-2); color:var(--txt); border-color:var(--line); }
