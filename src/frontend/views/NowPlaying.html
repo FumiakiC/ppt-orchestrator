@@ -2,7 +2,7 @@
         <div class="npgrid">
             <div class="np-monitor">
                 <div class="onair"><i></i> ON AIR</div>
-                <div class="now-name">%%DECK%%</div>
+                <div class="now-name"><span class="nn-track"><span class="nn-seg">%%DECK%%</span></span></div>
                 <div class="now-sub">Remote slide control</div>
                 <div class="now-timer" id="elapsed">00:00</div>
                 <div class="pos" id="pos">&mdash; / &mdash;</div>
@@ -43,6 +43,11 @@
         .np .np-controls { display:flex; flex-direction:column; justify-content:center; gap:16px; padding:36px; width:100%; max-width:540px; margin:0 auto; }
         .np .onair { margin:0; }
         .np .now-name { font-size:1.45rem; margin:20px 0 4px; max-width:100%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .np .now-name .nn-track { display:inline; }
+        .np .now-name .nn-seg { padding-right:0; }
+        .np .now-name.marquee { text-overflow:clip; text-align:left; }
+        .np .now-name.marquee .nn-track { display:inline-block; will-change:transform; vertical-align:top; }
+        .np .now-name.marquee .nn-seg { padding-right:2.4em; }
         .np .now-sub { margin-top:2px; }
         .np .now-timer { font-size:58px; margin:22px 0 2px; }
 
