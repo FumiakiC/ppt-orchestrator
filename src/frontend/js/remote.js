@@ -62,7 +62,7 @@
         var rm=window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
         var anim=null;
         var clone=null;
-        var ro=null;
+        var ro=null, evalFrame=null;
 
         function teardown(){
             if(anim){ anim.cancel(); anim=null; }
@@ -97,19 +97,24 @@
             );
         }
 
-        if('ResizeObserver' in window){
-            ro=new ResizeObserver(function(){ evaluate(); });
-            ro.observe(nameEl);
-        } else {
-            window.addEventListener('resize', evaluate);
-        }
-        if(document.fonts && document.fonts.ready){ document.fonts.ready.then(function(){ evaluate(); }); }
-        if(rm){
-            if(rm.addEventListener){ rm.addEventListener('change', evaluate); }
-            else if(rm.addListener){ rm.addListener(evaluate); }
+        function queueEvaluate(){
+            if(evalFrame) cancelAnimationFrame(evalFrame);
+            evalFrame=requestAnimationFrame(function(){ evalFrame=null; evaluate(); });
         }
 
-        evaluate();
+        if('ResizeObserver' in window){
+            ro=new ResizeObserver(queueEvaluate);
+            ro.observe(nameEl);
+        } else {
+            window.addEventListener('resize', queueEvaluate);
+        }
+        if(document.fonts && document.fonts.ready){ document.fonts.ready.then(queueEvaluate); }
+        if(rm){
+            if(rm.addEventListener){ rm.addEventListener('change', queueEvaluate); }
+            else if(rm.addListener){ rm.addListener(queueEvaluate); }
+        }
+
+        queueEvaluate();
     }
 
     initNowNameMarquee();

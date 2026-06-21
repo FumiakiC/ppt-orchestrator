@@ -45,17 +45,11 @@
         .np .now-name { font-size:1.45rem; margin:20px 0 4px; max-width:100%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .np .now-name .nn-track { display:inline; }
         .np .now-name .nn-seg { padding-right:0; }
-        .np .now-name.marquee { text-overflow:clip; }
-        .np .now-name.marquee .nn-track { display:inline-block; will-change:transform; }
+        .np .now-name.marquee { text-overflow:clip; text-align:left; }
+        .np .now-name.marquee .nn-track { display:inline-block; will-change:transform; vertical-align:top; }
         .np .now-name.marquee .nn-seg { padding-right:2.4em; }
         .np .now-sub { margin-top:2px; }
         .np .now-timer { font-size:58px; margin:22px 0 2px; }
-
-        @media (prefers-reduced-motion: reduce) {
-            .np .now-name.marquee { text-overflow:ellipsis; }
-            .np .now-name.marquee .nn-track { display:inline; transform:none !important; }
-            .np .now-name.marquee .nn-seg { padding-right:0; }
-        }
 
         .np .lockbar { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; padding:12px 14px 12px 16px; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--panel); }
         .np .lockbar .lbl { font:700 11px/1 var(--mono); letter-spacing:1.6px; color:var(--txt-dim); transition:color .16s; }
