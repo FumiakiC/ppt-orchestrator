@@ -25,7 +25,7 @@ function Watch-RunningPresentation {
         '%%DECK%%', [System.Web.HttpUtility]::HtmlEncode($TargetFileItem.Name))
     $fullHtml = $head + $bodyHtml
 
-    $status = "NormalEnd"
+    $status = "SlideshowExited"
 
     # ---- リモート操作のサーバ権威ステート（この再生セッションのローカル＝全端末で共有） ----
     # 再生が終わるとスコープごと破棄され、次の再生ではロック解除済みの状態から始まる（安全側）。
@@ -286,7 +286,7 @@ function Watch-RunningPresentation {
             }
 
             if (-not $stillOpen) {
-                $status = "NormalEnd"
+                $status = "ClosedByUser"
                 break
             }
 
@@ -300,7 +300,7 @@ function Watch-RunningPresentation {
             elseif ($showCount -eq 0) {
                 $sinceStart = ([DateTime]::UtcNow - $startTime).TotalSeconds
                 if ($showSeen -or ($sinceStart -gt $startupGraceSec)) {
-                    $status = "NormalEnd"
+                    $status = "SlideshowExited"
                     break
                 }
             }

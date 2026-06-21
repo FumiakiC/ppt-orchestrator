@@ -51,6 +51,33 @@ function Get-PptFiles {
     return Get-ChildItem -Path $Path -File | Where-Object { $_.Extension -in @('.ppt', '.pptx') -and $_.Name -notlike '~$*' } | Sort-Object Name
 }
 
+function Move-ToFinishIfPending {
+    param(
+        [object]$TargetFileItem,
+        [string]$FinishFolderPath,
+        [object]$Presentation
+    )
+
+    if (-not $TargetFileItem -or -not $TargetFileItem.FullName) { return $TargetFileItem }
+
+    # Idempotent guard: skip when source no longer exists or is already in finish folder.
+    if (-not (Test-Path -LiteralPath $TargetFileItem.FullName)) { return $TargetFileItem }
+    if ($TargetFileItem.DirectoryName -eq $FinishFolderPath) { return $TargetFileItem }
+
+    # Close an open presentation before move to avoid file lock sharing violations.
+    if ($Presentation) {
+        try { $Presentation.Close() } catch {}
+    }
+
+    try {
+        Write-Host " >> Moving to finished folder..." -ForegroundColor Gray
+        return Move-Item -LiteralPath $TargetFileItem.FullName -Destination $FinishFolderPath -Force -PassThru
+    } catch {
+        Write-Warning "Move failed: $_"
+        return $TargetFileItem
+    }
+}
+
 function Send-HttpResponse {
     param(
         [System.Net.HttpListenerResponse]$Response,
