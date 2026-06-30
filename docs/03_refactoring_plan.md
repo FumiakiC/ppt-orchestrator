@@ -1,6 +1,7 @@
 # ppt-orchestrator リファクタリング・堅牢化 最終計画書
 
 作成日: 2026-06-30  
+作成者: Sakana.ai Fugu Ultra
 対象: `ppt-orchestrator`
 
 > 本書は、`README.md` と実装一式を確認したうえで作成した、今後の改良・リファクタリング・堅牢化のための最終計画書です。  
