@@ -1,0 +1,84 @@
+================================================================================
+ docs/00_ai_context.txt  (v2)  —  ppt-orchestrator AIコンテキスト（全PR共通・最初に読む）
+ 用途: Claude Code / GitHub Copilot に毎回読ませる土台。各PRのプロンプトはこれを参照。
+ 置き場所: /docs（.gitignore 済み・ローカル専用 → clone 後には存在しない点に注意）
+ v2変更点: トークン名前空間を「BUILD_ 接頭辞による二層方式」に確定（§トークン名前空間）。
+================================================================================
+
+■ プロジェクト
+  ppt-orchestrator: 外部ソフトを入れられない厳格なWindows環境で、PowerPointを
+  スマホ等のブラウザから遠隔操作する Zero-Dependency Web リモコン。
+  Windows PowerShell 5.1 標準 + .NET(HttpListener / Win32 P/Invoke) + Vanilla JS/HTML/CSS のみ。
+  src/ を分割開発し、build/build.ps1 が単一 dist/presentation-controller.ps1 に統合する。
+  PowerShell 版が恒久の本命（C# AOT 化＝旧 Phase 3 は廃止）。
+
+■ 絶対厳守ルール（違反は却下）
+  1. Zero-Dependency: 外部CSS/JSフレームワーク・PSモジュール・ランタイム・PIA を一切追加しない。
+     ※ CI上のみで使う検証ツールは、製品の dist に同梱されない限り可。
+  2. スコープ厳守: そのPRのタスク範囲外のファイル・挙動を変更しない。
+  3. 動的値（ファイル名・cid 等）は実行時に HtmlEncode してから注入。ビルド時に焼き込まない。
+  4. 不確実なら勝手に進めず、判断ポイントを列挙して止まる。
+
+■ 退行させてはいけない既存実装（“触るな”リスト）
+  - HResult ベースの過渡エラー分類（RPC_E_CALL_REJECTED 0x80010001 等を「投影継続」と扱う）
+  - JobObject による道連れキル（JobGuard）/ QuickEdit 無効化（ConsoleWindow）
+  - New-SecurePin の rejection sampling / 状態ファイル ACL ハードニング（Protect-StateAcl）
+  - CSRF 対策（Cookie SameSite=Strict）/ 認証の 302 リダイレクトフロー
+  - 800ms デバウンス（actionSetTime）/ コンソールループ頭のキーバッファクリア
+  - 操作権ロックの「再生終了でスコープ破棄＝次回は解除状態から」という安全リセット
+  - main.ps1 の `-f` は HResult 16進整形でテンプレ無関係 → テンプレ -f 全廃の対象外（触らない）
+
+■ 主要コンポーネント（用語）
+  - main.ps1            : 起動・管理者昇格・listener生成・自動復旧ループ
+  - server.ps1          : リクエスト受信ループ / Get-SafeContextAsync
+  - com-handler.ps1     : PowerPoint COM 操作 + Watch-RunningPresentation（再生中ループ）
+  - auth.ps1            : PIN 認証・セッション
+  - templates.ps1       : HTML/CSS/JS ヒアドキュメント（1.1 で src/frontend へ分離・-f 全廃の対象）
+  - ui-console.ps1      : ホスト側コンソールUI（1.4 で描画/ループ分割の対象）。version 直書きもここ。
+  - config.ps1 / utils.ps1 : 設定・補助関数（New-SecurePin / Get-PptFiles 等）
+
+■ トークン名前空間（1.1 以降の確定規約。CI残骸ガードが依存）★v2で更新
+  二層に分け、接頭辞で区別する。許可リスト方式はやめる（増え続けて脆いため）。
+
+  (1) ビルド時トークン: 接頭辞 %%BUILD_*%%
+      - ビルド時に build.ps1 が src/frontend のファイル本体や version を**リテラル .Replace** で注入。
+      - 置換後 dist には**一切残ってはいけない**。
+      - 例: %%BUILD_VIEW_HTMLHEADER%% / %%BUILD_VIEW_AUTH%% / %%BUILD_VIEW_LOBBY%% /
+            %%BUILD_VIEW_DIALOG%% / %%BUILD_VIEW_NOWPLAYING%% / %%BUILD_VIEW_PROCESSING%% /
+            %%BUILD_VIEW_EXIT%% / %%BUILD_SCRIPT_POLLING%% / %%BUILD_JS_HOLD%% /
+            %%BUILD_ASSET_MAIN_CSS%% / %%BUILD_VERSION%%
+      - templates.ps1 側のヒアドキュメントは**リテラル @'...'@** にして、本体を %%BUILD_*%% 1個に置換。
+        （PowerShell が中身をパースしないので {{ }} エスケープが不要になる＝1.1 の主目的）
+
+  (2) 実行時トークン: 接頭辞なし %%NAME%%
+      - リクエストごとに実行時の .Replace() で注入。dist に**残ってよい**。
+      - 例: %%DECK%%（HtmlEncode 済み）/ %%TITLE%% / %%BGCOLOR%% / %%AUTH_ERROR%% /
+            %%LOBBY_START_BTN%% / %%LOBBY_NEXT_TEXT%% / %%LOBBY_LIST%% /
+            %%DIALOG_FILE%%（HtmlEncode 済み）/ %%DIALOG_NEXT_CLS%% / %%DIALOG_NEXT_STATE%% / %%DIALOG_NEXT_LABEL%%
+
+  規約:
+  - テンプレートへの -f 演算子適用は全廃（.Replace のみ）。.Replace は String.Replace（リテラル置換）
+    なので値中の $ に安全。
+  - 置換順序は「信頼トークンを先に、ユーザー入力（ファイル名・デッキ名）を必ず最後に」。
+  - 秘密（PIN 等）は Web 配信テンプレートのトークンにしない。
+
+■ CI残骸ガード（1.1 のPRで追加。ガードは“満たせるようになったPR”で入れる）
+  - ガードA(dist): 正規表現 %%BUILD_[A-Z0-9_]+%% が dist に残れば Fail（許可リスト不要）。
+  - ガードB(src) : `\$script:HtmlTemplates\.\w+\s*-f\b` が src に残れば Fail（-f 全廃の不変条件）。
+  - 追加(src)   : src/templates.ps1 に `{{` が残れば Fail（エスケープ撲滅の確認）。
+
+■ ローカル検証コマンド（コミット前に必ず通す）
+  pwsh -NoProfile -File ./build/build.ps1 -Version dev
+  # パース検証（dist 対象・エラー0必須）
+  $t=$null;$e=$null;[void][System.Management.Automation.Language.Parser]::ParseFile("$PWD/dist/presentation-controller.ps1",[ref]$t,[ref]$e); if($e){$e|%{Write-Error $_.Message}; exit 1}
+  # 残骸ガードA/B（1.1 以降）
+  $d=Get-Content "$PWD/dist/presentation-controller.ps1" -Raw; if([regex]::IsMatch($d,'%%BUILD_[A-Z0-9_]+%%')){Write-Error 'BUILD token left';exit 1}
+  if(Select-String -Path ./src/*.ps1 -Pattern '\$script:HtmlTemplates\.\w+\s*-f\b'){Write-Error '-f on template';exit 1}
+  if(Select-String -Path ./src/templates.ps1 -Pattern '\{\{'){Write-Error '{{ remains';exit 1}
+  pwsh -NoProfile -File ./tests/run-tests.ps1
+
+■ Git 運用
+  - 1 PR = 1 論理変更 = 1 リリース（main への push で自動 patch 採番）。squash-merge 推奨。
+  - コミットは Conventional Commits（feat/fix/refactor/test/ci/build/docs/chore）。
+  - AI生成差分は自動コミットしない。人間がレビュー後に論理単位でコミットする。
+  - COM/Listener/Console/.bat に触れるPRは、CI緑に加えて Windows 実機スモークが独立した必須ゲート。

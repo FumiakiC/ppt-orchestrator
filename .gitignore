@@ -18,7 +18,6 @@ finish/
 dist/
 
 #Documents
-docs/
 reference/
 
 # --- OS Generated Files (勝手なファイル生成対策) ---

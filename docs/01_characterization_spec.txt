@@ -1,0 +1,91 @@
+================================================================================
+ docs/01_characterization_spec.txt  (v2)  —  PR#1 で固定する「現挙動」の正本
+ 出典: reference/current-behavior.reference.ps1（本番コードからの逐語抜粋）
+ 原則: ここに書いた挙動を“1mmも変えず”にテストで固定する。バグに見えても直さない
+       （直すのは別PRの意図的判断）。怪しい点は 02_review_checklist.txt に「将来検討」で記録。
+
+ v2変更点（テスト方式のみ。期待値表は不変）:
+   被テスト関数は「テスト内へコピー」しない。実src のファイルから対象関数の本体を
+   AST で抽出し scriptblock 化して dot-source して実行する（_harness.ps1 の
+   Resolve-SrcFunction）。これで製品コードそのものを叩く black-box テストになり、
+   src 本体が改変されればテストが落ちる（PR#1 からドリフトを検出できる）。
+   ファイル先頭の param()/Add-Type/P-Invoke は走らないので ubuntu CI でも安全。
+================================================================================
+
+【層1：今すぐ単体テスト（実src関数を AST 抽出して実行）】───────────────────────
+
+[A] Test-SlideShowAtEnd($View,$Pos,$Total)  —  src/com-handler.ps1
+  読込: . (Resolve-SrcFunction -Path 'src/com-handler.ps1' -Name 'Test-SlideShowAtEnd')
+  期待:
+    Total=0,  Pos=3                 -> $false   # 総数不明ガード
+    Total=-1, Pos=0                 -> $false
+    Total=10, Pos=3                 -> $false   # 手前
+    Total=10, Pos=10, ci=2, cc=2    -> $true    # 最終 & ビルド消化済
+    Total=10, Pos=10, ci=1, cc=2    -> $false   # 未消化ビルド残り
+    Total=10, Pos=10, View が throw -> $true    # フォールバック
+  モック: GetClickIndex()/GetClickCount() を持つ PSCustomObject（throw 版も用意）
+
+[B] Get-PptFiles($Path)  —  src/utils.ps1
+  読込: . (Resolve-SrcFunction -Path 'src/utils.ps1' -Name 'Get-PptFiles')
+  一時ディレクトリに作成して検証:
+    a.pptx, b.ppt, C.PPTX(大文字), ~$lock.pptx, note.txt, scan.pdf
+  期待: .ppt/.pptx のみ採用（-in は大小無視 → C.PPTX も採用）・~$ 除外・Name 昇順。
+        厳密な並びは実行結果を一度採取して固定してよい。重要なのは
+        「対象/除外の集合」と「Sort-Object Name を通すこと」。
+
+[C] New-SecurePin()  —  src/config.ps1
+  読込: . (Resolve-SrcFunction -Path 'src/config.ps1' -Name 'New-SecurePin')
+  性質テスト（例: 2000回ループ）:
+    すべて [int] かつ 100000 <= pin <= 999999（桁数6）
+  ※ 乱数の中身は検証しない。範囲外を一度も返さないことだけ固定。
+  ※ AST抽出なので config.ps1 先頭の Add-Type / P-Invoke は走らず Linux でも安全。
+
+【層2：今はゴールデンデータのみ確定 → Phase 1.3 抽出時にテスト結線】──────────────
+（pending として保持。関数がまだインラインのため、AST抽出の対象にできない。1.3 で
+  Get-CidFromBody / Get-PinFromBody / Resolve-Route 等へ抽出後、Resolve-SrcFunction で
+  結線して有効化する。期待表は下記のまま不変。）
+
+[D] cid 抽出（POSTボディ正規表現）  cid=([A-Za-z0-9_\-]+) / -match 既定で大小無視
+    'cid=abc123'      -> 'abc123'
+    'cid=a_b-c'       -> 'a_b-c'
+    'x=1&cid=ZZ9'     -> 'ZZ9'
+    'CID=abc'         -> 'abc'
+    'cid=ab%E6%97%A5' -> 'ab'      # UrlDecode 後 'ab日'、日は不許可
+    'cid='            -> ''
+    'foo=bar'         -> ''
+
+[E] PIN 抽出  pin=([0-9]{6})  /  -match 既定で大小無視・アンカー無し
+    'pin=123456'      -> '123456'
+    'PIN=123456'      -> '123456'
+    'a=b&pin=000123'  -> '000123'
+    'pin=12345'       -> ''        # 5桁
+    'pin=1234567'     -> '123456'  # ★先頭6桁を捕捉（後続7は無視）＝現状仕様として固定
+    'xpin=123456'     -> '123456'  # ★部分一致を許容＝現状仕様として固定
+
+[F] ルート分類（純粋部分のみ。COM/HttpListener には触れない判定だけ）
+    ('/status','GET')      -> kind=status
+    ('/elapsed','GET')     -> kind=elapsed
+    ('/slide/state','GET') -> kind=slide-state
+    ('/lock/on','POST')    -> kind=lock-on
+    ('/lock/steal','POST') -> kind=lock-steal
+    ('/lock/off','POST')   -> kind=lock-off
+    ('/slide/next','POST') -> kind=slide, cmd='next',  valid=$true
+    ('/slide/zzz','POST')  -> kind=slide, cmd='zzz',   valid=$false
+    ('/slide/next','GET')  -> kind=other   # POST 以外は slide コマンド対象外
+    ('/unknown','GET')     -> kind=other
+  ※ valid 集合 = next,prev,first,last,blackout,whiteout
+
+【PR#1 の成果物（このPRで作る/触る）】──────────────────────────────────────
+  - tests/_harness.ps1（Assert-Equal / Assert-True / Write-TestPending /
+      Resolve-SrcFunction / Invoke-TestSummary。失敗時 exit 1）
+  - tests/run-tests.ps1（_harness 読込 → *.tests.ps1 を Sort-Object Name で dot-source → 集計）
+  - tests/atend.tests.ps1 / pptfiles.tests.ps1 / securepin.tests.ps1（層1。AST抽出1行で実src呼び）
+  - tests/golden.cid|pin|route.tests.ps1（層2。期待表を pending 保持。1.3 で結線）
+  - .github/workflows/build.yml に「パース検証（dist対象）」「テスト実行」を追加
+  - src/ は一切変更しない（抽出も挙動変更もしない）
+
+【テスト方式の合否観点（Copilot/Gemini/セルフ）】──────────────────────────────
+  - 被テスト関数を「テスト内にコピー定義」していないこと（→ black-box 違反）。
+  - 実src を Resolve-SrcFunction で参照し、src 本体改変時にテストが落ちること。
+  - ファイル全体の dot-source による副作用（Add-Type/P-Invoke/param）を起こしていないこと。
+  - 期待値表（[A]〜[F]）が本書と一致していること。層2は pending のままで早期有効化しないこと。
