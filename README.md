@@ -331,7 +331,7 @@ pwsh -NoProfile -File ./tests/run-tests.ps1
 
 - `src/` is modular for development; `build/build.ps1` fuses it into one self-contained script — the product itself stays strictly **zero-dependency** (no external modules, frameworks, or runtimes).
 - HTTP behavior is documented as a characterization spec in [`docs/04_api_spec.md`](docs/04_api_spec.md).
-- CI builds, guards, and tests every PR; a squash-merge to `main` automatically versions and publishes a GitHub Release with the ready-to-use ZIP.
+- CI builds, guards, and tests every PR; a push/merge to `main` automatically versions and publishes a GitHub Release with the ready-to-use ZIP.
 
 ## 📄 License
 
