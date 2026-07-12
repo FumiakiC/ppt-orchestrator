@@ -29,7 +29,7 @@ Reviewed by: Claude（全指摘をソースコードと静的突合済み）
 > - Phase 0 作業 7（`.gitattributes` / `.editorconfig`）を完了として記録した。BOM は `src/*.ps1` だけでなく `build/build.ps1` と `tests/*.ps1` を含む全 `*.ps1`（12 ファイル）に付与し、blob は LF 正規化・作業ツリーは `*.ps1` / `*.bat` のみ CRLF 固定とした。
 > - §5 の事実誤認を修正した。BOM なし + LF だったのは `com-handler.ps1` と `ui-console.ps1` の 2 ファイルではなく、**`templates.ps1` を含む 3 ファイル**だった（`templates.ps1` は純 ASCII のため文字化けの実害はなかった）。
 > - 挙動不変を定量的に確認した。`dist` の CRLF 数は 845 → 1566 に変化したが、改行・BOM を正規化した文字列比較（`-ceq`）で main の `dist` と完全一致。build は `UTF8Encoding($true)` で `dist` を書くため、src 側 BOM は `Get-Content -Encoding UTF8` で除去され `dist` に混入しない（v1.1.21 リリース資産の実測でも U+FEFF は先頭 1 個のみ）。
-> - 新規指摘: パス系 API の `-Path` / `-LiteralPath` 不統一。`main.ps1:40` の `Test-Path $TargetFolderPath` のみ `-LiteralPath` を欠き、`config.ps1` の 4 箇所は `-LiteralPath` を使用している。角括弧を含むフォルダ名で誤判定し得る。Phase 5 へ追加した。
+> - 新規指摘: パス系 API の `-Path` / `-LiteralPath` 不統一。`src` 全体では `-LiteralPath` が **11 箇所**（`config.ps1` 9 / `utils.ps1` 2）で使われている一方、`main.ps1:40` と `main.ps1:42` の `Test-Path` だけがこれを欠く外れ値。角括弧 `[` `]` を含むフォルダ名で実在パスを誤判定し得る。なお `main.ps1:42` の `New-Item` には `-LiteralPath` が存在しないため、`[WildcardPattern]::Escape()` 等の別手段が要る。Phase 5 へ追加した。
 
 ---
 
@@ -285,7 +285,7 @@ flowchart LR
 | 永続ログ | 重要イベントが `Write-Host` のみで事後解析できない。Zero-Dependency の追記専用ログを導入する。 | P1〜P2 |
 | port 二重定義 | `.bat` の `WEB_PORT` と `config.ps1` の `$WebPort` が二重定義。単一ソース化を検討する。 | P2 |
 | IP 表示 | `Get-LocalActiveIPs` の vendor 名除外は想定外 adapter に弱い。運用表示の改善余地がある。 | P2 |
-| パス系 API の `-LiteralPath` 不統一 | **新規（改訂 3）**: `main.ps1:40` は `Test-Path $TargetFolderPath` で `-LiteralPath` を欠く一方、`config.ps1` の 4 箇所（`Test-Path` / `Remove-Item` 等）は `-LiteralPath` を使用しており不統一。角括弧 `[` `]` を含むフォルダ名がワイルドカードとして解釈され、実在するフォルダを「Target Folder Not Found」と誤判定し得る。`$TargetFolderPath` に空文字が明示指定された場合の失敗形も未定義。#29 の Gemini レビューで検出。 | P1 |
+| パス系 API の `-LiteralPath` 不統一 | **新規（改訂 3）**: `src` 全体で `-LiteralPath` は 11 箇所（`config.ps1` 9: `Test-Path` 4 / `Set-Acl` 2 / `Get-Content` 1 / `Remove-Item` 1 / `Set-Content` 1、`utils.ps1` 2: `Test-Path` / `Move-Item`）使われているのに対し、`main.ps1:40` と `main.ps1:42` の `Test-Path` のみ `-LiteralPath` を欠く。角括弧 `[` `]` を含むフォルダ名がワイルドカードとして解釈され、実在するフォルダを「Target Folder Not Found」と誤判定し得る。`main.ps1:42` の `New-Item` は `-LiteralPath` を持たないため `[WildcardPattern]::Escape()` 等で対処する必要がある。#29 の Gemini レビューで検出し、#30 のレビューで箇所数を訂正。 | P1 |
 
 ---
 
@@ -481,7 +481,7 @@ COM / Listener / Console / `.bat` に触れる変更は CI だけでは不十分
 4. PowerPoint close 後の file lock 解放待ちとして短い retry + backoff を追加する。
 5. `finish/` 内ファイルを再生した場合は再移動しない既存 idempotent guard を維持する。
 6. collision と retry の unit test を追加する。
-7. パス系 API の `-Path` / `-LiteralPath` 使用を統一する（`main.ps1:40` の `Test-Path` を `-LiteralPath` 化）。角括弧を含むフォルダ名の characterization test を先行させる。`$TargetFolderPath` / `$StatePath` への `[ValidateNotNullOrEmpty()]` 付与可否も同 PR で判断する（空文字指定時の失敗形が「Write-Error + exit」からパラメータバインドエラーに変わる挙動変更を含むため）。
+7. パス系 API の `-Path` / `-LiteralPath` 使用を統一する（`main.ps1:40` / `main.ps1:42` の `Test-Path` を `-LiteralPath` 化。`New-Item` は `-LiteralPath` を持たないため `[WildcardPattern]::Escape()` 等で対処する）。角括弧を含むフォルダ名の characterization test を先行させる。`$TargetFolderPath` / `$StatePath` への `[ValidateNotNullOrEmpty()]` 付与は**実質的な挙動変更を伴わない**（現状も空文字指定時は `Test-Path` のパラメータバインド例外と `$ErrorActionPreference = 'Stop'`（`config.ps1:18`）により即時終了し、`Write-Error "Target Folder Not Found"` には到達しない）。エラー発生位置が param バインド時へ前倒しされ、メッセージが明確になる利点のみのため、付与を推奨（最終判断は同 PR で行う）。
 
 優先度: P1
 
