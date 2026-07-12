@@ -1,4 +1,4 @@
-function Test-SlideShowAtEnd {
+﻿function Test-SlideShowAtEnd {
     # 最終スライドかつ未消化のビルド（アニメーション）が無いときだけ $true。
     # GetClickIndex/GetClickCount が使えない環境では位置のみで判定（フォールバック）。
     param([object]$View, [int]$Pos, [int]$Total)

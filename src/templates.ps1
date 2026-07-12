@@ -1,4 +1,4 @@
-$script:HtmlTemplates = @{
+﻿$script:HtmlTemplates = @{
     # Shared HTML header + CSS + polling script.
     # Runtime tokens: %%TITLE%% (page title), %%BGCOLOR%% (compat, no visual effect).
     HtmlHeader = @'
