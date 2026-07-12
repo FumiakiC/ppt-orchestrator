@@ -1,0 +1,29 @@
+# ==============================================================================
+#  EditorConfig — https://editorconfig.org
+#  実測に合わせる: インデントはスペース 4（yml のみ 2）、タブ 0 件
+# ==============================================================================
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# PowerShell 5.1 が src/ を直接実行しても日本語が化けないよう BOM 必須
+[*.ps1]
+charset = utf-8-bom
+end_of_line = crlf
+
+# cmd.exe が読むため CRLF 固定。BOM は付けない（cmd が誤読するため）
+[*.bat]
+end_of_line = crlf
+
+[*.{yml,yaml}]
+indent_size = 2
+
+# Markdown の行末 2 スペースは意図的な改行なので削らない
+[*.md]
+trim_trailing_whitespace = false

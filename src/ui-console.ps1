@@ -1,4 +1,4 @@
-function Get-UserAction {
+﻿function Get-UserAction {
     param (
         [string]$Mode,
         [string]$CurrentFileName = "",
