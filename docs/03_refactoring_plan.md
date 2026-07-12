@@ -329,7 +329,7 @@ COM / Listener / Console / `.bat` に触れる変更は CI だけでは不十分
 4. Windows 実機スモーク手順を docs 化する。✅ 完了（PR-A / #27）。成果物: `docs/05_windows_smoke_checklist.md`。`docs/00_ai_context.txt` の「`/docs` は `.gitignore` 済み」という陳腐化記述の解消も含む。
 5. `.bat` 末尾の不要なバッククォート 2 文字を削除する。未着手。PR-B で UPN 抽出修正と同 PR で扱い、Windows 実機スモークを必須ゲートにする。
 6. ログ方針、security header 方針、token 方針を docs に記録する。Phase 2 / 2.5 へ移管。理由: これは単なる記録ではなく仕様判断そのものであり、§12 の token lifetime / `/status` 露出と同種の未決設計判断を含むため。
-**移管先には新規項目を追加しない**（既存項目に内包済み）: security header は Phase 2 作業 9、token 方針は Phase 2 作業 6、ログ方針は Phase 2.5 作業 1〜5 が該当する。方針の docs 化は、各 Phase で仕様判断を下した PR の成果物として行う。
+   **移管先には新規項目を追加しない**（既存項目に内包済み）: security header は Phase 2 作業 9、token 方針は Phase 2 作業 6、ログ方針は Phase 2.5 作業 1〜5 が該当する。方針の docs 化は、各 Phase で仕様判断を下した PR の成果物として行う。
 7. `.gitattributes` / `.editorconfig` を追加し、`src/*.ps1` を BOM 付き UTF-8 + CRLF に統一する（`dist` 生成物は build 側で既に BOM 付き固定のため挙動不変）。独立した chore PR へ分離。理由: 全ファイルに行末差分が出てレビュー不能になるため。
 
 受け入れ条件:
