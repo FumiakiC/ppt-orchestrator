@@ -28,10 +28,10 @@ Running a multi-speaker event often comes with severe operational headaches. Thi
 
 ---
 
-## ✨ Key Features (v1.0)
+## ✨ Key Features
 
 - **📱 Mobile Web Remote:** Control presentations directly from your phone's browser.
-- **🔐 Secure PIN Authentication:** Protects your session with a randomly generated 6-digit One-Time PIN.
+- **🔐 Secure PIN Authentication:** Uses a 6-digit PIN for authentication, then issues an HttpOnly / SameSite=Strict session cookie so authenticated devices can continue without re-entering the PIN.
 - **🔄 Seamless Transitions:** Instant, full-screen switching between `.ppt` / `.pptx` files.
 - **🗂️ Auto-Queue & Pagination:** Automatically sorts files into "Pending" and "Completed" lists. Supports pagination for large-scale events with many speakers.
 - **🛡️ Auto-Configuration & Cleanup:** The included Batch file automatically handles Administrator elevation, Windows Firewall rules, and URLACL bindings—and cleanly removes them upon exit.
@@ -59,7 +59,12 @@ ppt-orchestrator/
 │   ├── server.ps1                   #    HTTP request routing
 │   ├── ui-console.ps1               #    Console UI & keyboard input
 │   ├── com-handler.ps1              #    PowerPoint COM monitoring
-│   └── main.ps1                     #    Entry point (dot-sources all modules)
+│   ├── main.ps1                     #    Entry point (dot-sources all modules)
+│   └── frontend/                    #    Views (.html), main.css, polling/remote/hold .js
+│
+├── docs/                            # 📚 AI context, characterization spec, API spec, plans
+│
+├── tests/                           # ✅ Dependency-free characterization tests (run-tests.ps1)
 │
 ├── build/
 │   └── build.ps1                    # 🔨 Combines src/ into a single deployable script
