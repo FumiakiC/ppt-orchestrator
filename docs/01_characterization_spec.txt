@@ -80,7 +80,7 @@
   - tests/run-tests.ps1（_harness 読込 → *.tests.ps1 を Sort-Object Name で dot-source → 集計）
   - tests/atend.tests.ps1 / pptfiles.tests.ps1 / securepin.tests.ps1（層1。AST抽出1行で実src呼び）
   - tests/golden.cid|pin|route.tests.ps1（層2。期待表を pending 保持。1.3 で結線）
-  - 注記: 現況は golden.cid / golden.pin が結線済み・有効、golden.route のみ pending（10 件）。
+  - 注記: ※ 上記は PR#1 時点の記述。現況（PR-A 時点）は golden.cid / golden.pin が #16 / #18 で結線済み・有効になっており、pending は golden.route の 10 件のみ。
   - .github/workflows/build.yml に「パース検証（dist対象）」「テスト実行」を追加
   - src/ は一切変更しない（抽出も挙動変更もしない）
 

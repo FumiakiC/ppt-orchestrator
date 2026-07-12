@@ -82,7 +82,7 @@ HTTP は **単一スレッド逐次処理**（`$script:ContextTask` を 1 個だ
 |---|---|---|---|---|
 | GET | `/status` | 不要 | — | 200 `text/plain` : `running` |
 | POST | `/auth` | 不要 | — | Lobby ループと同一（`Invoke-AuthHandler`） |
-| GET | `/auth` | 未認証 | — | ⚠ **NowPlaying の HTML をそのまま返す**（露出）。PR-D で修正予定 |
+| GET | `/auth` | 認証有無に関係なく | — | ⚠ **NowPlaying の HTML をそのまま返す**（認証済みでも 302 `/` にはならない。Lobby ループの GET `/auth` と非対称）。PR-D で修正予定 |
 | GET | `/elapsed` | 必要 | 不要 | 200 `text/plain` : 経過ミリ秒（整数） |
 | GET | `/slide/state` | 必要 | 不要 | 200 JSON `{ms,pos,total,lock,mine,black,white,atEnd}`。`total` は初回のみ COM 取得しキャッシュ。`mine` のとき `ownerSeen` を更新（ハートビート） |
 | POST | `/lock/on` | 必要 | — | 未ロック or 自分が owner: `{ok:true,mine:true,busy:false}` / 他端末が保持中: `{ok:false,mine:false,busy:true}` |
