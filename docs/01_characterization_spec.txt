@@ -40,12 +40,11 @@
   ※ 乱数の中身は検証しない。範囲外を一度も返さないことだけ固定。
   ※ AST抽出なので config.ps1 先頭の Add-Type / P-Invoke は走らず Linux でも安全。
 
-【層2：今はゴールデンデータのみ確定 → Phase 1.3 抽出時にテスト結線】──────────────
-（pending として保持。関数がまだインラインのため、AST抽出の対象にできない。1.3 で
-  Get-CidFromBody / Get-PinFromBody / Resolve-Route 等へ抽出後、Resolve-SrcFunction で
-  結線して有効化する。期待表は下記のまま不変。）
+【層2：[D] cid / [E] PIN は結線済み・有効、[F] route のみ pending 10 件（Phase 1 / PR-C で結線）】──────────────
+（[D]/[E] は src/utils.ps1 の Get-CidFromBody / Get-PinFromBody へ抽出済みで、Resolve-SrcFunction により結線済み・有効。
+  [F] は pending 10 件を保持。Phase 1 / PR-C で Resolve-Route 抽出後に結線する。期待表は下記のまま不変。）
 
-[D] cid 抽出（POSTボディ正規表現）  cid=([A-Za-z0-9_\-]+) / -match 既定で大小無視
+[D] cid 抽出（結線済み・有効: src/utils.ps1 Get-CidFromBody）  cid=([A-Za-z0-9_\-]+) / -match 既定で大小無視
     'cid=abc123'      -> 'abc123'
     'cid=a_b-c'       -> 'a_b-c'
     'x=1&cid=ZZ9'     -> 'ZZ9'
@@ -54,7 +53,7 @@
     'cid='            -> ''
     'foo=bar'         -> ''
 
-[E] PIN 抽出  pin=([0-9]{6})  /  -match 既定で大小無視・アンカー無し
+[E] PIN 抽出（結線済み・有効: src/utils.ps1 Get-PinFromBody）  pin=([0-9]{6})  /  -match 既定で大小無視・アンカー無し
     'pin=123456'      -> '123456'
     'PIN=123456'      -> '123456'
     'a=b&pin=000123'  -> '000123'
@@ -62,7 +61,7 @@
     'pin=1234567'     -> '123456'  # ★先頭6桁を捕捉（後続7は無視）＝現状仕様として固定
     'xpin=123456'     -> '123456'  # ★部分一致を許容＝現状仕様として固定
 
-[F] ルート分類（純粋部分のみ。COM/HttpListener には触れない判定だけ）
+[F] ルート分類（pending 10 件。PR-C で Resolve-Route 抽出後に結線。純粋部分のみ。COM/HttpListener には触れない判定だけ）
     ('/status','GET')      -> kind=status
     ('/elapsed','GET')     -> kind=elapsed
     ('/slide/state','GET') -> kind=slide-state
@@ -81,6 +80,7 @@
   - tests/run-tests.ps1（_harness 読込 → *.tests.ps1 を Sort-Object Name で dot-source → 集計）
   - tests/atend.tests.ps1 / pptfiles.tests.ps1 / securepin.tests.ps1（層1。AST抽出1行で実src呼び）
   - tests/golden.cid|pin|route.tests.ps1（層2。期待表を pending 保持。1.3 で結線）
+  - 注記: ※ 上記は PR#1 時点の記述。現況（PR-A 時点）は golden.cid / golden.pin が #16 / #18 で結線済み・有効になっており、pending は golden.route の 10 件のみ。
   - .github/workflows/build.yml に「パース検証（dist対象）」「テスト実行」を追加
   - src/ は一切変更しない（抽出も挙動変更もしない）
 
