@@ -68,13 +68,18 @@ netsh http delete urlacl url=%URLACL_URL% >nul 2>&1
 echo [URLACL] Adding: %URLACL_URL%
 REM URLACL user: prefer UPN (whoami /upn), fallback to DOMAIN\USERNAME
 set "CURRENT_UPN="
-for /f "tokens=1,* delims=:" %%A in ('whoami /upn 2^>nul ^| find ":"') do set "CURRENT_UPN=%%B"
-if defined CURRENT_UPN (
-    for /f "tokens=* delims= " %%Z in ("%CURRENT_UPN%") do set "CURRENT_UPN=%%Z"
-) else (
-    set "CURRENT_UPN=%USERDOMAIN%\%USERNAME%"
-)
+REM  - whoami /upn prints one line like "user@example.com" and never contains ":".
+REM    The old 'find ":"' filter therefore never matched: CURRENT_UPN was never set
+REM    and the fallback was used 100% of the time.
+REM  - On non-domain PCs whoami /upn fails, so accept the value only if it looks
+REM    like a UPN (contains "@"). The check uses batch string substitution
+REM    (no external process), and keeps the fallback working regardless of
+REM    whether whoami writes its error text to stdout or stderr.
+for /f "tokens=* delims= " %%A in ('whoami /upn 2^>nul') do set "CURRENT_UPN=%%A"
+if "%CURRENT_UPN%"=="%CURRENT_UPN:@=%" set "CURRENT_UPN="
+if not defined CURRENT_UPN set "CURRENT_UPN=%USERDOMAIN%\%USERNAME%"
 
+echo [URLACL] User: %CURRENT_UPN%
 netsh http add urlacl url=%URLACL_URL% user="%CURRENT_UPN%" listen=yes
 if %errorlevel% neq 0 (
     echo [Warning] Failed to add URLACL. Continuing, but please check permissions later.
@@ -148,4 +153,3 @@ REM -----------------------------------------------
 echo All processes completed. Press any key to close this window...
 pause >nul
 exit /b 0
-``
