@@ -72,10 +72,11 @@ REM  - whoami /upn prints one line like "user@example.com" and never contains ":
 REM    The old 'find ":"' filter therefore never matched: CURRENT_UPN was never set
 REM    and the fallback was used 100% of the time.
 REM  - On non-domain PCs whoami /upn fails, so accept the value only if it looks
-REM    like a UPN (contains "@"). This keeps the fallback working regardless of
+REM    like a UPN (contains "@"). The check uses batch string substitution
+REM    (no external process), and keeps the fallback working regardless of
 REM    whether whoami writes its error text to stdout or stderr.
 for /f "tokens=* delims= " %%A in ('whoami /upn 2^>nul') do set "CURRENT_UPN=%%A"
-echo "%CURRENT_UPN%" | find "@" >nul 2>&1 || set "CURRENT_UPN="
+if "%CURRENT_UPN%"=="%CURRENT_UPN:@=%" set "CURRENT_UPN="
 if not defined CURRENT_UPN set "CURRENT_UPN=%USERDOMAIN%\%USERNAME%"
 
 echo [URLACL] User: %CURRENT_UPN%
