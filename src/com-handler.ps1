@@ -55,7 +55,8 @@ function Watch-RunningPresentation {
                 }
                 $req  = $context.Request
                 $res  = $context.Response
-                $path = $req.Url.LocalPath.ToLower()
+                $path  = $req.Url.LocalPath.ToLower()
+                $route = Resolve-Route -Path $path -Method $req.HttpMethod
 
                 $isAuthenticated = Test-IsAuthenticated -Request $req
 
@@ -73,7 +74,7 @@ function Watch-RunningPresentation {
                     continue
                 }
 
-                if ($path -eq "/auth" -and $req.HttpMethod -eq "POST") {
+                if ($route.Kind -eq 'auth') {
                     $authBody = Read-RequestBody -Request $req
                     Invoke-AuthHandler -Request $req -Response $res -Body $authBody | Out-Null
                     $script:ContextTask = Get-SafeContextAsync -Listener $Listener
@@ -96,121 +97,31 @@ function Watch-RunningPresentation {
                     $ownerCid   = ''
                 }
 
-                if ($path -eq "/status") {
-                    Send-HttpResponse -Response $res -Content "running" -ContentType "text/plain"
-                }
-                elseif ($path -eq "/elapsed") {
-                    $ms = [long][Math]::Floor(([DateTime]::UtcNow - $startTime).TotalMilliseconds)
-                    Send-HttpResponse -Response $res -Content "$ms" -ContentType "text/plain"
-                }
-                elseif ($path -eq "/slide/state") {
-                    # 現在位置(N/M)を取得（COMアクセスは最小限：位置1プロパティ＋総数は初回のみ）
-                    $pos = 0
-                    try {
-                        if ($PptApp.SlideShowWindows.Count -ge 1) {
-                            $view = $PptApp.SlideShowWindows.Item(1).View
-                            $pos  = [int]$view.CurrentShowPosition
-                            if ($totalSlides -le 0) {
-                                $totalSlides = [int]$PptApp.SlideShowWindows.Item(1).Presentation.Slides.Count
-                            }
-                        }
-                    } catch {}
+                $stopRequested = $false
 
-                    $mine = ($lockActive -and $cid -and ($ownerCid -eq $cid))
-                    if ($mine) { $ownerSeen = [DateTime]::UtcNow }   # ハートビート（操作端末の生存更新）
-
-                    $atEnd = $false
-                    try {
-                        if ($PptApp.SlideShowWindows.Count -ge 1) {
-                            $atEnd = [bool](Test-SlideShowAtEnd -View $PptApp.SlideShowWindows.Item(1).View -Pos $pos -Total $totalSlides)
-                        }
-                    } catch {}
-
-                    $ms = [long][Math]::Floor(([DateTime]::UtcNow - $startTime).TotalMilliseconds)
-                    $payload = @{
-                        ms    = $ms
-                        pos   = $pos
-                        total = $totalSlides
-                        lock  = [bool]$lockActive
-                        mine  = [bool]$mine
-                        black = [bool]$projBlack
-                        white = [bool]$projWhite
-                        atEnd = [bool]$atEnd
-                    } | ConvertTo-Json -Compress
-                    Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
-                }
-                elseif ($path -eq "/lock/on" -and $req.HttpMethod -eq "POST") {
-                    if ((-not $lockActive) -or ($ownerCid -eq $cid)) {
-                        $lockActive = $true; $ownerCid = $cid; $ownerSeen = [DateTime]::UtcNow
-                        $payload = @{ ok = $true; mine = $true; busy = $false } | ConvertTo-Json -Compress
-                    } else {
-                        $payload = @{ ok = $false; mine = $false; busy = $true } | ConvertTo-Json -Compress
+                switch ($route.Kind) {
+                    'status' {
+                        Send-HttpResponse -Response $res -Content "running" -ContentType "text/plain"
                     }
-                    Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
-                }
-                elseif ($path -eq "/lock/steal" -and $req.HttpMethod -eq "POST") {
-                    # 明示的な操作権の奪取（バックアップ端末向け。誤爆防止のためUI側は長押し必須）
-                    $lockActive = $true; $ownerCid = $cid; $ownerSeen = [DateTime]::UtcNow
-                    $payload = @{ ok = $true; mine = $true } | ConvertTo-Json -Compress
-                    Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
-                }
-                elseif ($path -eq "/lock/off" -and $req.HttpMethod -eq "POST") {
-                    if ($ownerCid -eq $cid) { $lockActive = $false; $ownerCid = '' }
-                    $payload = @{ ok = $true } | ConvertTo-Json -Compress
-                    Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
-                }
-                elseif (($path -like '/slide/*') -and $req.HttpMethod -eq "POST") {
-                    $cmd = $path.Substring(7)   # '/slide/'.Length = 7
-                    $valid = @('next','prev','first','last','blackout','whiteout')
-                    if ($valid -notcontains $cmd) {
-                        $payload = @{ ok = $false; error = 'unknown' } | ConvertTo-Json -Compress
-                        Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
+                    'elapsed' {
+                        $ms = [long][Math]::Floor(([DateTime]::UtcNow - $startTime).TotalMilliseconds)
+                        Send-HttpResponse -Response $res -Content "$ms" -ContentType "text/plain"
                     }
-                    elseif (-not ($lockActive -and $cid -and ($ownerCid -eq $cid))) {
-                        # ロックOFF or 操作権が他端末 → サーバ側で拒否（多層防御）
-                        $payload = @{ ok = $false; locked = $true } | ConvertTo-Json -Compress
-                        Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
-                    }
-                    else {
-                        $ownerSeen = [DateTime]::UtcNow   # 操作＝ハートビート
-                        $ok = $false
-                        try {
-                            if ($PptApp.SlideShowWindows.Count -ge 1) {
-                                $view = $PptApp.SlideShowWindows.Item(1).View
-                                switch ($cmd) {
-                                    'next'  {
-                                        $cp = 0; try { $cp = [int]$view.CurrentShowPosition } catch {}
-                                        if (-not (Test-SlideShowAtEnd -View $view -Pos $cp -Total $totalSlides)) {
-                                            $view.Next(); $projBlack = $false; $projWhite = $false
-                                        }
-                                    }
-                                    'prev'  { $view.Previous(); $projBlack = $false; $projWhite = $false }
-                                    'first' { $view.First();    $projBlack = $false; $projWhite = $false }
-                                    'last'  { $view.Last();     $projBlack = $false; $projWhite = $false }
-                                    'blackout' {
-                                        if ($projBlack) { $view.State = 1; $projBlack = $false }   # 1=running(復帰)
-                                        else            { $view.State = 3; $projBlack = $true; $projWhite = $false }  # 3=black
-                                    }
-                                    'whiteout' {
-                                        if ($projWhite) { $view.State = 1; $projWhite = $false }
-                                        else            { $view.State = 4; $projWhite = $true; $projBlack = $false }  # 4=white
-                                    }
-                                }
-                                $ok = $true
-                            }
-                        } catch {
-                            Write-Host " [Warning] Slide control '$cmd' failed: $($_.Exception.Message)" -ForegroundColor Yellow
-                        }
-
+                    'slide-state' {
+                        # 現在位置(N/M)を取得（COMアクセスは最小限：位置1プロパティ＋総数は初回のみ）
                         $pos = 0
                         try {
                             if ($PptApp.SlideShowWindows.Count -ge 1) {
-                                $pos = [int]$PptApp.SlideShowWindows.Item(1).View.CurrentShowPosition
+                                $view = $PptApp.SlideShowWindows.Item(1).View
+                                $pos  = [int]$view.CurrentShowPosition
                                 if ($totalSlides -le 0) {
                                     $totalSlides = [int]$PptApp.SlideShowWindows.Item(1).Presentation.Slides.Count
                                 }
                             }
                         } catch {}
+
+                        $mine = ($lockActive -and $cid -and ($ownerCid -eq $cid))
+                        if ($mine) { $ownerSeen = [DateTime]::UtcNow }   # ハートビート（操作端末の生存更新）
 
                         $atEnd = $false
                         try {
@@ -219,29 +130,124 @@ function Watch-RunningPresentation {
                             }
                         } catch {}
 
+                        $ms = [long][Math]::Floor(([DateTime]::UtcNow - $startTime).TotalMilliseconds)
                         $payload = @{
-                            ok    = [bool]$ok; locked = $false
-                            pos   = $pos; total = $totalSlides
-                            black = [bool]$projBlack; white = [bool]$projWhite
+                            ms    = $ms
+                            pos   = $pos
+                            total = $totalSlides
+                            lock  = [bool]$lockActive
+                            mine  = [bool]$mine
+                            black = [bool]$projBlack
+                            white = [bool]$projWhite
                             atEnd = [bool]$atEnd
                         } | ConvertTo-Json -Compress
                         Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
                     }
+                    'lock-on' {
+                        if ((-not $lockActive) -or ($ownerCid -eq $cid)) {
+                            $lockActive = $true; $ownerCid = $cid; $ownerSeen = [DateTime]::UtcNow
+                            $payload = @{ ok = $true; mine = $true; busy = $false } | ConvertTo-Json -Compress
+                        } else {
+                            $payload = @{ ok = $false; mine = $false; busy = $true } | ConvertTo-Json -Compress
+                        }
+                        Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
+                    }
+                    'lock-steal' {
+                        # 明示的な操作権の奪取（バックアップ端末向け。誤爆防止のためUI側は長押し必須）
+                        $lockActive = $true; $ownerCid = $cid; $ownerSeen = [DateTime]::UtcNow
+                        $payload = @{ ok = $true; mine = $true } | ConvertTo-Json -Compress
+                        Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
+                    }
+                    'lock-off' {
+                        if ($ownerCid -eq $cid) { $lockActive = $false; $ownerCid = '' }
+                        $payload = @{ ok = $true } | ConvertTo-Json -Compress
+                        Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
+                    }
+                    'slide' {
+                        $cmd = $route.Cmd
+                        if (-not $route.Valid) {
+                            $payload = @{ ok = $false; error = 'unknown' } | ConvertTo-Json -Compress
+                            Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
+                        }
+                        elseif (-not ($lockActive -and $cid -and ($ownerCid -eq $cid))) {
+                            # ロックOFF or 操作権が他端末 → サーバ側で拒否（多層防御）
+                            $payload = @{ ok = $false; locked = $true } | ConvertTo-Json -Compress
+                            Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
+                        }
+                        else {
+                            $ownerSeen = [DateTime]::UtcNow   # 操作＝ハートビート
+                            $ok = $false
+                            try {
+                                if ($PptApp.SlideShowWindows.Count -ge 1) {
+                                    $view = $PptApp.SlideShowWindows.Item(1).View
+                                    switch ($cmd) {
+                                        'next'  {
+                                            $cp = 0; try { $cp = [int]$view.CurrentShowPosition } catch {}
+                                            if (-not (Test-SlideShowAtEnd -View $view -Pos $cp -Total $totalSlides)) {
+                                                $view.Next(); $projBlack = $false; $projWhite = $false
+                                            }
+                                        }
+                                        'prev'  { $view.Previous(); $projBlack = $false; $projWhite = $false }
+                                        'first' { $view.First();    $projBlack = $false; $projWhite = $false }
+                                        'last'  { $view.Last();     $projBlack = $false; $projWhite = $false }
+                                        'blackout' {
+                                            if ($projBlack) { $view.State = 1; $projBlack = $false }   # 1=running(復帰)
+                                            else            { $view.State = 3; $projBlack = $true; $projWhite = $false }  # 3=black
+                                        }
+                                        'whiteout' {
+                                            if ($projWhite) { $view.State = 1; $projWhite = $false }
+                                            else            { $view.State = 4; $projWhite = $true; $projBlack = $false }  # 4=white
+                                        }
+                                    }
+                                    $ok = $true
+                                }
+                            } catch {
+                                Write-Host " [Warning] Slide control '$cmd' failed: $($_.Exception.Message)" -ForegroundColor Yellow
+                            }
+
+                            $pos = 0
+                            try {
+                                if ($PptApp.SlideShowWindows.Count -ge 1) {
+                                    $pos = [int]$PptApp.SlideShowWindows.Item(1).View.CurrentShowPosition
+                                    if ($totalSlides -le 0) {
+                                        $totalSlides = [int]$PptApp.SlideShowWindows.Item(1).Presentation.Slides.Count
+                                    }
+                                }
+                            } catch {}
+
+                            $atEnd = $false
+                            try {
+                                if ($PptApp.SlideShowWindows.Count -ge 1) {
+                                    $atEnd = [bool](Test-SlideShowAtEnd -View $PptApp.SlideShowWindows.Item(1).View -Pos $pos -Total $totalSlides)
+                                }
+                            } catch {}
+
+                            $payload = @{
+                                ok    = [bool]$ok; locked = $false
+                                pos   = $pos; total = $totalSlides
+                                black = [bool]$projBlack; white = [bool]$projWhite
+                                atEnd = [bool]$atEnd
+                            } | ConvertTo-Json -Compress
+                            Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
+                        }
+                    }
+                    'stop' {
+                        $status = "ManualStop"
+                        try {
+                            $res.StatusCode = 302
+                            $res.KeepAlive  = $false
+                            $res.AddHeader("Location", "/")
+                            $res.Close()
+                        } catch {}
+                        $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+                        $stopRequested = $true   # switch 内の break は while を抜けないため flag 経由
+                    }
+                    default {
+                        Send-HttpResponse -Response $res -Content $fullHtml
+                    }
                 }
-                elseif ($path -eq "/stop" -and $req.HttpMethod -eq "POST") {
-                    $status = "ManualStop"
-                    try {
-                        $res.StatusCode = 302
-                        $res.KeepAlive  = $false
-                        $res.AddHeader("Location", "/")
-                        $res.Close()
-                    } catch {}
-                    $script:ContextTask = Get-SafeContextAsync -Listener $Listener
-                    break
-                }
-                else {
-                    Send-HttpResponse -Response $res -Content $fullHtml
-                }
+
+                if ($stopRequested) { break }
 
                 $script:ContextTask = Get-SafeContextAsync -Listener $Listener
             }

@@ -167,3 +167,37 @@ function Read-RequestBody {
         if ($null -ne $sr) { $sr.Dispose() }
     }
 }
+
+function Resolve-Route {
+    # HTTP パス + メソッド → ルート種別を返す純粋関数（COM / HttpListener に触れない）。
+    # 分類順序は Watch-RunningPresentation の従来の if/elseif チェーンと 1:1 で一致させること。
+    #   Kind : 'auth'|'status'|'elapsed'|'slide-state'|'lock-on'|'lock-steal'|'lock-off'|'slide'|'stop'|'other'
+    #   Cmd  : Kind='slide' のときのみ有効（'/slide/' 以降の文字列）
+    #   Valid: Kind='slide' のときのみ有効（許可コマンド集合に含まれるか）
+    param (
+        [string]$Path,
+        [string]$Method
+    )
+
+    $p      = if ($Path) { $Path.ToLower() } else { '' }
+    $isPost = ($Method -eq 'POST')
+    $kind   = 'other'
+    $cmd    = ''
+    $valid  = $false
+
+    if     ($p -eq '/auth'        -and $isPost) { $kind = 'auth' }
+    elseif ($p -eq '/status')                   { $kind = 'status' }        # 現状メソッド非依存（挙動保存）
+    elseif ($p -eq '/elapsed')                  { $kind = 'elapsed' }       # 現状メソッド非依存（挙動保存）
+    elseif ($p -eq '/slide/state')              { $kind = 'slide-state' }   # '/slide/*' より必ず先に判定
+    elseif ($p -eq '/lock/on'     -and $isPost) { $kind = 'lock-on' }
+    elseif ($p -eq '/lock/steal'  -and $isPost) { $kind = 'lock-steal' }
+    elseif ($p -eq '/lock/off'    -and $isPost) { $kind = 'lock-off' }
+    elseif (($p -like '/slide/*') -and $isPost) {
+        $kind  = 'slide'
+        $cmd   = $p.Substring(7)   # '/slide/'.Length = 7
+        $valid = (@('next','prev','first','last','blackout','whiteout') -contains $cmd)
+    }
+    elseif ($p -eq '/stop'        -and $isPost) { $kind = 'stop' }
+
+    return [pscustomobject]@{ Kind = $kind; Cmd = $cmd; Valid = $valid }
+}
