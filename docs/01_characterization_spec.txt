@@ -40,9 +40,9 @@
   ※ 乱数の中身は検証しない。範囲外を一度も返さないことだけ固定。
   ※ AST抽出なので config.ps1 先頭の Add-Type / P-Invoke は走らず Linux でも安全。
 
-【層2：[D] cid / [E] PIN は結線済み・有効、[F] route のみ pending 10 件（Phase 1 / PR-C で結線）】──────────────
-（[D]/[E] は src/utils.ps1 の Get-CidFromBody / Get-PinFromBody へ抽出済みで、Resolve-SrcFunction により結線済み・有効。
-  [F] は pending 10 件を保持。Phase 1 / PR-C で Resolve-Route 抽出後に結線する。期待表は下記のまま不変。）
+【層2：[D] cid / [E] PIN / [F] route は結線済み・有効】──────────────────────────
+（[D]/[E]/[F] は src/utils.ps1 の Get-CidFromBody / Get-PinFromBody / Resolve-Route へ抽出済みで、
+  Resolve-SrcFunction により結線済み・有効。期待表は現状仕様を固定し、挙動変更は別PRで扱う。）
 
 [D] cid 抽出（結線済み・有効: src/utils.ps1 Get-CidFromBody）  cid=([A-Za-z0-9_\-]+) / -match 既定で大小無視
     'cid=abc123'      -> 'abc123'
@@ -61,16 +61,24 @@
     'pin=1234567'     -> '123456'  # ★先頭6桁を捕捉（後続7は無視）＝現状仕様として固定
     'xpin=123456'     -> '123456'  # ★部分一致を許容＝現状仕様として固定
 
-[F] ルート分類（pending 10 件。PR-C で Resolve-Route 抽出後に結線。純粋部分のみ。COM/HttpListener には触れない判定だけ）
+[F] ルート分類（結線済み・有効: src/utils.ps1 Resolve-Route。純粋部分のみ。COM/HttpListener には触れない判定だけ）
+  ('/auth','POST')       -> kind=auth
     ('/status','GET')      -> kind=status
+  ('/status','POST')     -> kind=status      # 現状メソッド非依存
     ('/elapsed','GET')     -> kind=elapsed
+  ('/elapsed','POST')    -> kind=elapsed     # 現状メソッド非依存
     ('/slide/state','GET') -> kind=slide-state
+  ('/slide/state','POST')-> kind=slide-state # '/slide/*' より先に判定
     ('/lock/on','POST')    -> kind=lock-on
     ('/lock/steal','POST') -> kind=lock-steal
     ('/lock/off','POST')   -> kind=lock-off
     ('/slide/next','POST') -> kind=slide, cmd='next',  valid=$true
     ('/slide/zzz','POST')  -> kind=slide, cmd='zzz',   valid=$false
+  ('/slide/','POST')     -> kind=slide, cmd='',      valid=$false
     ('/slide/next','GET')  -> kind=other   # POST 以外は slide コマンド対象外
+  ('/auth','GET')        -> kind=other   # 未認証でも NowPlaying HTML が返る現行挙動を固定（変更は PR-D）
+  ('/stop','POST')       -> kind=stop
+  ('/stop','GET')        -> kind=other
     ('/unknown','GET')     -> kind=other
   ※ valid 集合 = next,prev,first,last,blackout,whiteout
 
@@ -79,8 +87,8 @@
       Resolve-SrcFunction / Invoke-TestSummary。失敗時 exit 1）
   - tests/run-tests.ps1（_harness 読込 → *.tests.ps1 を Sort-Object Name で dot-source → 集計）
   - tests/atend.tests.ps1 / pptfiles.tests.ps1 / securepin.tests.ps1（層1。AST抽出1行で実src呼び）
-  - tests/golden.cid|pin|route.tests.ps1（層2。期待表を pending 保持。1.3 で結線）
-  - 注記: ※ 上記は PR#1 時点の記述。現況（PR-A 時点）は golden.cid / golden.pin が #16 / #18 で結線済み・有効になっており、pending は golden.route の 10 件のみ。
+  - tests/golden.cid|pin|route.tests.ps1（層2。期待表を実src関数へ結線し有効化）
+  - 注記: ※ 上記は PR#1 時点の記述。現況（PR-C 時点）は golden.cid / golden.pin / golden.route がすべて結線済み・有効。
   - .github/workflows/build.yml に「パース検証（dist対象）」「テスト実行」を追加
   - src/ は一切変更しない（抽出も挙動変更もしない）
 
@@ -88,4 +96,4 @@
   - 被テスト関数を「テスト内にコピー定義」していないこと（→ black-box 違反）。
   - 実src を Resolve-SrcFunction で参照し、src 本体改変時にテストが落ちること。
   - ファイル全体の dot-source による副作用（Add-Type/P-Invoke/param）を起こしていないこと。
-  - 期待値表（[A]〜[F]）が本書と一致していること。層2は pending のままで早期有効化しないこと。
+  - 期待値表（[A]〜[F]）が本書と一致していること。層2は実src関数へ結線して有効化されていること。
