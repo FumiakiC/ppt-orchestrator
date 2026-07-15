@@ -402,7 +402,7 @@ Phase 0 は、作業 6（ログ方針 / security header 方針 / token 方針の
 7. PIN / token 比較の固定時間 helper 化を検討する。
 8. `/status` の未認証応答を仕様化し、必要なら最小化する。
 9. `Send-HttpResponse` に低リスク security headers を統一追加する。
-10. パス正規化のカルチャ依存を除去する。ルーティング / 認証ゲートで使う `LocalPath.ToLower()` はカルチャ依存で、トルコ語ロケール（tr-TR）等では `I`→`ı`（ドットなし）となり `/STATUS` 等が正しく分類されず、`$path -ne "/status"` の認証ゲートにも波及する。対象 3 箇所を `ToLowerInvariant()` へ統一する: `src/com-handler.ps1`（ルーティング入口）/ `src/server.ps1`（Lobby ルーティング）/ `src/utils.ps1` `Resolve-Route`。入口（com-handler / server）で Invariant 化すれば `Resolve-Route` へ渡る文字列は正規化済みとなるため、`Resolve-Route` 内の `ToLower()` は二重適用の解消も兼ねて同時に Invariant 化する。characterization は ASCII パスのみを対象とするため挙動不変（既存テストは緑のまま）。PR-C（#33）の Gemini レビュー指摘に対応。
+10. パス正規化のカルチャ依存を除去する。ルーティング / 認証ゲートで使う `ToLower()`（例: `Url.LocalPath.ToLower()` / `Resolve-Route` の `$Path.ToLower()`）はカルチャ依存で、トルコ語ロケール（tr-TR）等では `I`→`ı`（ドットなし）となり `/SLIDE/NEXT` 等が `/slıde/next` になって `-like '/slide/*'` などの判定が崩れ得る。対象 3 箇所を `ToLowerInvariant()` へ統一する: `src/com-handler.ps1`（ルーティング入口）/ `src/server.ps1`（Lobby ルーティング）/ `src/utils.ps1` `Resolve-Route`。入口（com-handler / server）で Invariant 化すれば `Resolve-Route` へ渡る文字列は正規化済みとなるため、`Resolve-Route` 内も `ToLowerInvariant()` に統一して二重適用を解消する。characterization は小文字 ASCII パスのみを対象とするため挙動不変（既存テストは緑のまま）。PR-C（#33）の Gemini レビュー指摘に対応。
 
 注意:
 
