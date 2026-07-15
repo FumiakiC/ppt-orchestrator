@@ -40,7 +40,7 @@ Reviewed by: Claude（全指摘をソースコードと静的突合済み）
 > **改訂 5（2026-07-15）**: PR-C（#33）が main に squash merge され、`v1.1.27` として自動リリースされた後、Phase 1 の進捗と新規指摘の取り込みを行った。主な変更点:
 > - Phase 1 作業（`Resolve-Route` の純粋関数抽出 + `golden.route.tests.ps1` の PENDING 10 件有効化）を完了として記録した。ルート分類は `src/utils.ps1` の `Resolve-Route` に集約され、`com-handler.ps1` の dispatch は `switch ($route.Kind)` 化された（`/stop` は switch 内 break が while を抜けない PowerShell 仕様のため flag 方式で回避）。
 > - route の characterization（[F]）が pending から結線済み・有効になり、現行のテスト基準値は `PASS 57 / FAIL 0 / PENDING 0` になった。
-> - Gemini レビューで指摘された `LocalPath.ToLower()` のカルチャ依存（Turkish-I 問題）を Phase 2 の作業 10 として追加した。挙動不変の refactor である PR-C 本体には含めず、入口を含む 3 箇所の一括対応として Phase 2 へ送った。
+> - Gemini レビューで指摘された パス正規化の `ToLower()` のカルチャ依存（Turkish-I 問題）を Phase 2 の作業 10 として追加した。挙動不変の refactor である PR-C 本体には含めず、入口の `Url.LocalPath.ToLower()`（`src/com-handler.ps1` / `src/server.ps1`）と `Resolve-Route` 内の `$Path.ToLower()` を含む 3 箇所の一括対応として Phase 2 へ送った。
 
 ---
 
