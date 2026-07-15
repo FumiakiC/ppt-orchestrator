@@ -239,7 +239,7 @@ flowchart LR
 
 | 観点 | 内容 | 優先 |
 |---|---|---|
-| route 分類未抽出 | `server.ps1` と `com-handler.ps1` に分岐が散在。`Resolve-Route` を純粋関数として抽出し、`golden.route.tests.ps1` を有効化する。 | P1 |
+| route 分類未抽出 | **✅ 完了（PR-C / #33 / `v1.1.27`）**。`server.ps1` と `com-handler.ps1` に散在していた分岐を `src/utils.ps1` の `Resolve-Route` に集約し、`golden.route.tests.ps1`（pending 10 件）を有効化した。 | P1 |
 | 認証処理重複 | 未認証 HTML 応答、XHR 401 JSON、`/auth` POST、認証済み `/auth` redirect が複数箇所にある。middleware/helper 化する。 | P1 |
 | 未認証 `GET /auth` | **確定挙動（改訂 1 でコード確認済み）**: 両ループで再現する。(1) `server.ps1` の認証ガード（L21）は `$url -ne "/auth"` を素通しし、`GET` は `/auth POST` ハンドラにも認証済みリダイレクト（L42）にも該当しないため、既定応答 `$MainHtml`（**Lobby HTML**）に落ちる。(2) `com-handler.ps1` も同構造（L62 のガード素通し → 既定 `else` で `$fullHtml` = **NowPlaying HTML**）。未認証者にファイル名・デッキ名・スライド構成が露出する。修正は「未認証 `GET /auth` → AuthView」の 1 分岐追加で足り、影響範囲は小さい。 | P1 |
 | `/stop` 所有権 | **確定挙動（改訂 1 でコード確認済み）**: `com-handler.ps1:231` の `/stop` ハンドラは認証チェック（ループ先頭の共通ガード）のみで、`/slide/*` が要求する cid + lock owner の検証がない。認証済み端末なら誰でも即時停止できる。なお UI 側は既に form POST + 1500ms hold-to-confirm（`NowPlaying.html:30-31`）+ PRG 302 で誤操作対策済み。高影響操作として lock owner 必須にするか、緊急停止として仕様化（+ログ記録）するか判断が必要。 | P1 |
@@ -287,7 +287,7 @@ flowchart LR
 
 | 観点 | 内容 | 優先 |
 |---|---|---|
-| docs drift | `docs/01_characterization_spec.txt` は cid/pin/route を pending と読めるが、実際は cid/pin が有効化済み。修正する。 | P0 |
+| docs drift | **✅ 完了（PR-A / #27 で cid/pin、PR-C / #33 で route を追従）**。`docs/01_characterization_spec.txt` は [D]cid / [E]PIN / [F]route をすべて結線済み・有効として記述済み。 | P0 |
 | README 表現 | README の “One-Time PIN” は日次 PIN/Token 再利用の実装とズレる。`daily PIN/session` 等へ修正する。 | P0 |
 | Windows smoke | CI は ubuntu なので COM / Listener / Console / `.bat` を検証できない。手順書と PR gate が必要。 | P1 |
 | `.bat` 末尾 | **✅ 完了（PR-B / #32 / `v1.1.25`）**。**事実修正（改訂 1）**: 残っているのは「``` 行」ではなく、`exit /b 0` の後の**バッククォート 2 文字 `` ` ` ``（終端改行なし）**。`exit /b 0` 後のため実害はないが除去する。PR-B で末尾のバッククォート 2 文字を削除し、`exit /b 0` + CRLF 終端に修正した。 | P0 |
@@ -380,6 +380,8 @@ Phase 0 は、作業 6（ログ方針 / security header 方針 / token 方針の
 - 最初の PR では挙動変更しない。
 - `/status` の未認証許可はこの時点では維持し、変更するなら別 PR。
 - 認証成功時 302 flow は維持。
+
+> **完了記録（改訂 5）**: 作業 1・2（`Resolve-Route` 抽出 + `golden.route.tests.ps1` の pending 10 件有効化）を PR-C（#33 / `v1.1.27`）で完了。テスト基準値は `PASS 57 / FAIL 0 / PENDING 0`。作業 3・4（response helper / request body 仕様化）は未着手。
 
 優先度: P1
 
@@ -554,7 +556,7 @@ Phase 0 は、作業 6（ログ方針 / security header 方針 / token 方針の
 
 ### P1: 堅牢化の本丸
 
-1. `Resolve-Route` 抽出と `golden.route.tests.ps1` 有効化。
+1. `Resolve-Route` 抽出と `golden.route.tests.ps1` 有効化。✅ 完了（PR-C / #33 / `v1.1.27`）
 2. 未認証 `GET /auth` 情報露出修正。
 3. `/stop` 権限モデル決定と実装。
 4. `Move-ToFinishIfPending` の同名上書き・file lock race 対策。
@@ -584,7 +586,7 @@ Phase 0 は、作業 6（ログ方針 / security header 方針 / token 方針の
 | PR-A | README/docs 追従、API 仕様、Windows smoke checklist。完了（#27 / `v1.1.20`） | tests, build |
 | chore-A | `.gitattributes` / `.editorconfig` + BOM・改行コード統一。完了（#29 / `v1.1.22`） | tests, build, Windows encoding smoke |
 | PR-B | `.bat` ゴミ行削除 + UPN 抽出修正。完了（#32 / `v1.1.25`） | tests, build, Windows `.bat` smoke |
-| PR-C | `Resolve-Route` 抽出 + route tests 有効化 | tests, build, Windows API smoke |
+| PR-C | `Resolve-Route` 抽出 + route tests 有効化。完了（#33 / `v1.1.27`） | tests, build, Windows API smoke |
 | PR-D | 未認証 `/auth` 修正 | tests, build, browser auth smoke |
 | PR-E | `/stop` 権限モデル修正 + UI 追従 | tests, build, Windows NowPlaying smoke |
 | PR-F | finish 同名上書き回避 + lock retry + tests | tests, build, Windows file move smoke |
@@ -629,7 +631,7 @@ COM / Listener / Console / `.bat` に触れる PR では最低限以下を確認
 
 | 対象 | テスト内容 |
 |---|---|
-| `Resolve-Route` | `golden.route.tests.ps1` の pending 10 件を有効化 |
+| `Resolve-Route` | `golden.route.tests.ps1` の pending 10 件を有効化 ✅ 完了（PR-C / #33） |
 | `Resolve-FinishDestination` | 同名 collision 時の destination 命名規則 |
 | `Move-ToFinishIfPending` | finish 配下再生時は再移動しない、retry 失敗時の戻り値 |
 | `Read-RequestBody` | `MaxChars` 境界、超過時 `''`、必要なら `Content-Length` 早期拒否 |
@@ -658,7 +660,7 @@ COM / Listener / Console / `.bat` に触れる PR では最低限以下を確認
 推奨順序は以下です。
 
 1. docs / README / API 仕様 / smoke checklist を現状追従する。
-2. `Resolve-Route` を抽出して route pending を 0 にする。
+2. `Resolve-Route` を抽出して route pending を 0 にする。✅ 完了（PR-C / #33 / `v1.1.27`）。
 3. 未認証 `/auth` と `/stop` 権限モデルを修正する。
 4. finish 移動の同名上書き・file lock race を潰す。
 5. `.bat` の UPN 抽出は完了（PR-B / #32 / `v1.1.25`）。残る運用ログの改善を進める。
