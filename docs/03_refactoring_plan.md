@@ -631,7 +631,7 @@ COM / Listener / Console / `.bat` に触れる PR では最低限以下を確認
 
 | 対象 | テスト内容 |
 |---|---|
-| `Resolve-Route` | `golden.route.tests.ps1` の pending 10 件を有効化 ✅ 完了（PR-C / #33） |
+| `Resolve-Route` | `golden.route.tests.ps1` の pending 10 件を有効化 ✅ 完了（PR-C / #33 / `v1.1.27`） |
 | `Resolve-FinishDestination` | 同名 collision 時の destination 命名規則 |
 | `Move-ToFinishIfPending` | finish 配下再生時は再移動しない、retry 失敗時の戻り値 |
 | `Read-RequestBody` | `MaxChars` 境界、超過時 `''`、必要なら `Content-Length` 早期拒否 |
