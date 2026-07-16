@@ -29,7 +29,7 @@ HTTP は **単一スレッド逐次処理**（`$script:ContextTask` を 1 個だ
 - Cookie: `SessionToken=<guid:N>; HttpOnly; Path=/; SameSite=Strict`（`Secure` は HTTP 運用のため付与しない）
 - 判定: `Test-IsAuthenticated` が Cookie 値と `$script:SessionToken` を**単純一致比較**（定数時間比較ではない）。
 - token は**全端末で共有**され、明示的な失効（logout / lifetime）は**現状なし**。
-- **未認証で通過できるパス**: `/status`、`/auth`（両モード共通）。
+- **未認証で通過できるパス**: `/status`、および **`POST /auth`（PIN 送信）のみ**（両モード共通）。未認証 `GET /auth` は認証ミドルウェアが AuthView(200) を返す（PR-D / #37 / `v1.1.31` で修正）。
 
 ### 2.2 認証失敗時の throttle（`Invoke-AuthHandler`）
 
@@ -60,7 +60,7 @@ HTTP は **単一スレッド逐次処理**（`$script:ContextTask` を 1 個だ
 | GET | `/status` | 不要 | 状態文字列のみ返す（offline overlay 用の半意図的仕様） | 200 `text/plain` : `waiting` / `changing` / `stopping` |
 | POST | `/auth` | 不要 | PIN 照合（throttle 適用） | 成功: **302** `Location: /` + `Set-Cookie`<br>失敗/throttle: **200** Auth 画面 HTML（error 表示） |
 | GET | `/auth` | 認証済 | ルートへ戻す | 302 `Location: /` |
-| GET | `/auth` | 未認証 | ⚠ **認証ミドルウェアを素通りし、Lobby/Dialog の HTML をそのまま返す**（＝**ファイル一覧が未認証で露出**）。計画書 §5.4・PR-D で修正予定 | 200 HTML（Lobby 本体） |
+| GET | `/auth` | 未認証 | 認証ミドルウェアが Auth 画面を返す（PR-D / #37 / `v1.1.31` で修正。以前は Lobby/NowPlaying HTML が露出していた） | 200 Auth HTML |
 | POST | `/start` | 必要 | `ResultAction = Start` | 200 Processing HTML |
 | POST | `/next` | 必要 | `ResultAction = Next` | 200 Processing HTML |
 | POST | `/retry` | 必要 | `ResultAction = Retry` | 200 Processing HTML |

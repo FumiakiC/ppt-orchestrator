@@ -41,6 +41,13 @@ Reviewed by: Claude（全指摘をソースコードと静的突合済み）
 > - Phase 1 作業（`Resolve-Route` の純粋関数抽出 + `golden.route.tests.ps1` の PENDING 10 件有効化）を完了として記録した。ルート分類は `src/utils.ps1` の `Resolve-Route` に集約され、`com-handler.ps1` の dispatch は `switch ($route.Kind)` 化された（`/stop` は switch 内 break が while を抜けない PowerShell 仕様のため flag 方式で回避）。
 > - route の characterization（[F]）が pending から結線済み・有効になり、現行のテスト基準値は `PASS 57 / FAIL 0 / PENDING 0` になった。
 > - Gemini レビューで指摘された パス正規化の `ToLower()` のカルチャ依存（Turkish-I 問題）を Phase 2 の作業 10 として追加した。挙動不変の refactor である PR-C 本体には含めず、入口の `Url.LocalPath.ToLower()`（`src/com-handler.ps1` / `src/server.ps1`）と `Resolve-Route` 内の `$Path.ToLower()` を含む 3 箇所の一括対応として Phase 2 へ送った。
+>
+> **改訂 6（2026-07-16）**: PR-D（#37）が main に squash merge され、`v1.1.31` として自動リリースされた。未認証 `GET /auth` の情報露出（Lobby / NowPlaying HTML）を修正した。主な点:
+> - 修正は **認証ガード層**で実施し、`Resolve-Route` は変更しなかった。`server.ps1` は素通しを `POST /auth` のみに限定（除外ケースを `$isAuthPost` として抽出）、`com-handler.ps1` はガード条件を `$path -ne "/auth"` から `$route.Kind -ne 'auth'` に変更（GET /auth=`other` を捕捉）。両ループとも未認証 `GET /auth` は AuthView(200) を返す。
+> - `Resolve-Route '/auth' 'GET'` の分類は `'other'` のまま（characterization 期待表は不変）。テスト基準値 `PASS 57 / FAIL 0 / PENDING 0` を維持。
+> - ガード判定はループ内の命令コードで listener 無しの CI では単体化できないため、characterization の実体は **Parallels Windows VM の browser auth smoke**（未認証 `/auth` で HTML が漏れないこと・PIN ログイン・認証済み 302 を確認済み）。
+> - Gemini medium 指摘（二重否定）は `$isAuthPost` 抽出で解消（ド・モルガンで論理等価・挙動不変）。
+> - スコープ外（Phase 2 に残置）: 作業 3（auth 応答の共通 helper 化）・作業 4（`/stop` 権限, PR-E）・作業 5（PIN brute force）・作業 10（`ToLowerInvariant`）。
 
 ---
 
@@ -241,7 +248,7 @@ flowchart LR
 |---|---|---|
 | route 分類未抽出 | **✅ 完了（PR-C / #33 / `v1.1.27`）**。`com-handler.ps1` に散在していた route 分類ロジックを `src/utils.ps1` の `Resolve-Route`（純粋関数）へ抽出し、`com-handler.ps1` の dispatch を `switch ($route.Kind)` 化、`golden.route.tests.ps1`（pending 10 件）を有効化した。※ `server.ps1`（Lobby 側）の `$url` 分岐は本 PR では未統合で、Phase 2 作業 10（`ToLowerInvariant` 化）と併せて別途扱う。 | P1 |
 | 認証処理重複 | 未認証 HTML 応答、XHR 401 JSON、`/auth` POST、認証済み `/auth` redirect が複数箇所にある。middleware/helper 化する。 | P1 |
-| 未認証 `GET /auth` | **確定挙動（改訂 1 でコード確認済み）**: 両ループで再現する。(1) `server.ps1` の認証ガード（L21）は `$url -ne "/auth"` を素通しし、`GET` は `/auth POST` ハンドラにも認証済みリダイレクト（L42）にも該当しないため、既定応答 `$MainHtml`（**Lobby HTML**）に落ちる。(2) `com-handler.ps1` も同構造（L62 のガード素通し → 既定 `else` で `$fullHtml` = **NowPlaying HTML**）。未認証者にファイル名・デッキ名・スライド構成が露出する。修正は「未認証 `GET /auth` → AuthView」の 1 分岐追加で足り、影響範囲は小さい。 | P1 |
+| 未認証 `GET /auth` | **✅ 完了（PR-D / #37 / `v1.1.31`）**。認証ガード層で修正済み（`server.ps1`=POST /auth のみ素通し・`$isAuthPost` 抽出、`com-handler.ps1`=`$route.Kind -ne 'auth'`）。両ループで未認証 GET /auth は AuthView(200) を返す。以下は修正前の記録: 両ループで再現した。(1) `server.ps1` の認証ガード（L21）は `$url -ne "/auth"` を素通しし、`GET` は `/auth POST` ハンドラにも認証済みリダイレクト（L42）にも該当しないため、既定応答 `$MainHtml`（**Lobby HTML**）に落ちる。(2) `com-handler.ps1` も同構造（L62 のガード素通し → 既定 `else` で `$fullHtml` = **NowPlaying HTML**）。未認証者にファイル名・デッキ名・スライド構成が露出する。修正は「未認証 `GET /auth` → AuthView」の 1 分岐追加で足り、影響範囲は小さい。 | P1 |
 | `/stop` 所有権 | **確定挙動（改訂 1 でコード確認済み）**: `com-handler.ps1:231` の `/stop` ハンドラは認証チェック（ループ先頭の共通ガード）のみで、`/slide/*` が要求する cid + lock owner の検証がない。認証済み端末なら誰でも即時停止できる。なお UI 側は既に form POST + 1500ms hold-to-confirm（`NowPlaying.html:30-31`）+ PRG 302 で誤操作対策済み。高影響操作として lock owner 必須にするか、緊急停止として仕様化（+ログ記録）するか判断が必要。 | P1 |
 | `/status` 情報露出 | `/status` は未認証で `waiting` / `changing` / `stopping` / `running` を返す。offline overlay のため半意図的だが、仕様化または認証前最小化を検討。 | P2 |
 | body parser | `filename=(.*)`, `pin=([0-9]{6})`, `cid=...` など正規表現中心。characterization 済み挙動を壊さず、段階的に form parser 化を検討。 | P2 |
@@ -263,7 +270,7 @@ flowchart LR
 
 | 観点 | 内容 | 優先 |
 |---|---|---|
-| 未認証情報露出 | 未認証 `GET /auth` で Lobby/NowPlaying HTML が返る（§5.3 で確定挙動として確認済み）。修正する。 | P1 |
+| 未認証情報露出 | **✅ 完了（PR-D / #37 / `v1.1.31`）**。未認証 `GET /auth` は認証ガード層で AuthView(200) を返す。`Resolve-Route` は不変。 | P1 |
 | PIN brute force | **定量化（改訂 1）**: `Invoke-AuthHandler`（`auth.ps1`）は「最終失敗から 1 秒以内は拒否」の固定窓のみで、**拒否された試行はタイムスタンプを更新しない**ため窓が伸びず、実効レートは IP あたり約 1 試行/秒で頭打ちにならない。PIN 空間 900,000 に対し 1 日 ≒ 86,400 試行 → 単一 IP でも**当日 PIN 的中確率が約 9.6%/日**。複数端末からの並列試行でさらに上がる。失敗回数ベースの指数バックオフ、短時間 lockout、global 試行レート上限のいずれかは実装価値が高い。 | P1 |
 | 日次・全端末共有 token | `SessionToken` は当日中同一で全端末共有。漏洩時に当日中有効。**補足（改訂 1）**: `Set-Cookie` に `Max-Age`/`Expires` がないためブラウザ側はセッション Cookie（ブラウザ終了で消滅）だが、サーバ側 token は当日中有効なままなので再取得可能であり、実質的な有効期間はサーバ側で決まる。Token 短命化、再発行、logout/再認証、Cookie `Max-Age` を検討する。 | P1〜P2 |
 | 定数時間比較 | PIN / token 比較が通常 `-eq`。リスクは低いが、固定時間比較 helper 化は低コスト。 | P2 |
@@ -393,9 +400,9 @@ Phase 0 は、作業 6（ログ方針 / security header 方針 / token 方針の
 
 作業:
 
-1. 未認証 `GET /auth` は常に AuthView を返す。
-2. 認証済み `GET /auth` は `/` へ 302 する。
-3. XHR API 未認証時は JSON 401、通常画面遷移時は AuthView を返す方針を共通 helper 化する。
+1. 未認証 `GET /auth` は常に AuthView を返す。✅ 完了（PR-D / #37 / `v1.1.31`、認証ガード層で実施）
+2. 認証済み `GET /auth` は `/` へ 302 する。（`server.ps1` は既存実装で 302 済み。`com-handler.ps1` は既定で NowPlaying を返す差異があり、統一は helper 化=作業3 で扱う）
+3. XHR API 未認証時は JSON 401、通常画面遷移時は AuthView を返す方針を共通 helper 化する。（PR-D では最小修正のため未着手。auth 応答の重複解消として別 refactor PR で対応予定）
 4. `/stop` の権限モデルを決める。
    - 案A: 操作権 owner のみ stop 可。
    - 案B: emergency stop として認証済み全員を許可し、仕様化とログ記録を行う。
@@ -557,7 +564,7 @@ Phase 0 は、作業 6（ログ方針 / security header 方針 / token 方針の
 ### P1: 堅牢化の本丸
 
 1. `Resolve-Route` 抽出と `golden.route.tests.ps1` 有効化。✅ 完了（PR-C / #33 / `v1.1.27`）
-2. 未認証 `GET /auth` 情報露出修正。
+2. 未認証 `GET /auth` 情報露出修正。✅ 完了（PR-D / #37 / `v1.1.31`）
 3. `/stop` 権限モデル決定と実装。
 4. `Move-ToFinishIfPending` の同名上書き・file lock race 対策。
 5. `Start-Presenter.bat` の UPN 抽出修正。✅ 完了（PR-B / #32 / `v1.1.25`）
@@ -587,7 +594,7 @@ Phase 0 は、作業 6（ログ方針 / security header 方針 / token 方針の
 | chore-A | `.gitattributes` / `.editorconfig` + BOM・改行コード統一。完了（#29 / `v1.1.22`） | tests, build, Windows encoding smoke |
 | PR-B | `.bat` ゴミ行削除 + UPN 抽出修正。完了（#32 / `v1.1.25`） | tests, build, Windows `.bat` smoke |
 | PR-C | `Resolve-Route` 抽出 + route tests 有効化。完了（#33 / `v1.1.27`） | tests, build, Windows API smoke |
-| PR-D | 未認証 `/auth` 修正 | tests, build, browser auth smoke |
+| PR-D | 未認証 `/auth` 修正。✅ 完了（#37 / `v1.1.31`） | tests, build, browser auth smoke |
 | PR-E | `/stop` 権限モデル修正 + UI 追従 | tests, build, Windows NowPlaying smoke |
 | PR-F | finish 同名上書き回避 + lock retry + tests | tests, build, Windows file move smoke |
 | PR-K | パス系 API の `-LiteralPath` 統一 + 空値バリデーション判断（characterization test 先行） | tests, build, Windows path smoke |
