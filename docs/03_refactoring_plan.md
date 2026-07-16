@@ -239,7 +239,7 @@ flowchart LR
 
 | 観点 | 内容 | 優先 |
 |---|---|---|
-| route 分類未抽出 | **✅ 完了（PR-C / #33 / `v1.1.27`）**。`server.ps1` と `com-handler.ps1` に散在していた分岐を `src/utils.ps1` の `Resolve-Route` に集約し、`golden.route.tests.ps1`（pending 10 件）を有効化した。 | P1 |
+| route 分類未抽出 | **✅ 完了（PR-C / #33 / `v1.1.27`）**。`com-handler.ps1` に散在していた route 分類ロジックを `src/utils.ps1` の `Resolve-Route`（純粋関数）へ抽出し、`com-handler.ps1` の dispatch を `switch ($route.Kind)` 化、`golden.route.tests.ps1`（pending 10 件）を有効化した。※ `server.ps1`（Lobby 側）の `$url` 分岐は本 PR では未統合で、Phase 2 作業 10（`ToLowerInvariant` 化）と併せて別途扱う。 | P1 |
 | 認証処理重複 | 未認証 HTML 応答、XHR 401 JSON、`/auth` POST、認証済み `/auth` redirect が複数箇所にある。middleware/helper 化する。 | P1 |
 | 未認証 `GET /auth` | **確定挙動（改訂 1 でコード確認済み）**: 両ループで再現する。(1) `server.ps1` の認証ガード（L21）は `$url -ne "/auth"` を素通しし、`GET` は `/auth POST` ハンドラにも認証済みリダイレクト（L42）にも該当しないため、既定応答 `$MainHtml`（**Lobby HTML**）に落ちる。(2) `com-handler.ps1` も同構造（L62 のガード素通し → 既定 `else` で `$fullHtml` = **NowPlaying HTML**）。未認証者にファイル名・デッキ名・スライド構成が露出する。修正は「未認証 `GET /auth` → AuthView」の 1 分岐追加で足り、影響範囲は小さい。 | P1 |
 | `/stop` 所有権 | **確定挙動（改訂 1 でコード確認済み）**: `com-handler.ps1:231` の `/stop` ハンドラは認証チェック（ループ先頭の共通ガード）のみで、`/slide/*` が要求する cid + lock owner の検証がない。認証済み端末なら誰でも即時停止できる。なお UI 側は既に form POST + 1500ms hold-to-confirm（`NowPlaying.html:30-31`）+ PRG 302 で誤操作対策済み。高影響操作として lock owner 必須にするか、緊急停止として仕様化（+ログ記録）するか判断が必要。 | P1 |
