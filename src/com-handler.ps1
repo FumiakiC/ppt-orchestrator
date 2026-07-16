@@ -60,7 +60,7 @@ function Watch-RunningPresentation {
 
                 $isAuthenticated = Test-IsAuthenticated -Request $req
 
-                if (-not $isAuthenticated -and $path -ne "/status" -and $path -ne "/auth") {
+                if (-not $isAuthenticated -and $path -ne "/status" -and $route.Kind -ne 'auth') {
                     if ($path -like '/slide/*' -or $path -like '/lock/*') {
                         # XHRで叩くAPIには401を返し、クライアント側で再認証へ誘導する
                         try { $res.StatusCode = 401 } catch {}
