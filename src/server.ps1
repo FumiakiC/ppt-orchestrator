@@ -18,7 +18,8 @@ function Invoke-WebRequestProcessor {
 
     # --- 認証ミドルウェア ---
     $isAuthenticated = Test-IsAuthenticated -Request $req
-    if (-not $isAuthenticated -and $url -ne "/status" -and -not ($url -eq "/auth" -and $req.HttpMethod -eq "POST")) {
+    $isAuthPost = ($url -eq "/auth" -and $req.HttpMethod -eq "POST")
+    if (-not $isAuthenticated -and -not $isAuthPost -and $url -ne "/status") {
         $authHtml = $script:HtmlTemplates.AuthView.Replace('%%BGCOLOR%%', '#0f2027').Replace('%%AUTH_ERROR%%', '')
         Send-HttpResponse -Response $res -Content $authHtml
         $script:ContextTask = Get-SafeContextAsync -Listener $Listener
