@@ -10,7 +10,7 @@
 #  現状仕様として固定する挙動（このファイル内の期待表 [F]）:
 #    - /status, /elapsed, /slide/state はメソッド非依存（POST でも同じ Kind）
 #    - /slide/state は /slide/* より先に判定される
-#    - GET /auth は 'other'（未認証でも NowPlaying HTML が返る現行挙動の固定。変更は PR-D）
+#    - GET /auth は 'other'（未認証アクセスは認証ガードで AuthView を返す。Resolve-Route の分類値は維持）
 # =============================================================================
 
 . (Resolve-SrcFunction -Path "$PSScriptRoot/../src/utils.ps1" -Name 'Resolve-Route')
@@ -38,7 +38,7 @@ $r = Resolve-Route '/slide/' 'POST';      Assert-Equal 'slide' $r.Kind  '[F] /sl
 $r = Resolve-Route '/slide/next' 'GET';   Assert-Equal 'other' $r.Kind  '[F] /slide/next GET (POST 以外は slide 対象外)'
 
 $r = Resolve-Route '/auth' 'POST';        Assert-Equal 'auth'  $r.Kind  '[F] /auth POST'
-$r = Resolve-Route '/auth' 'GET';         Assert-Equal 'other' $r.Kind  '[F] /auth GET (現行の情報露出を固定 / PR-D で変更)'
+$r = Resolve-Route '/auth' 'GET';         Assert-Equal 'other' $r.Kind  '[F] /auth GET (認証ガードでAuthView / route分類はother維持)'
 $r = Resolve-Route '/stop' 'POST';        Assert-Equal 'stop'  $r.Kind  '[F] /stop POST'
 $r = Resolve-Route '/stop' 'GET';         Assert-Equal 'other' $r.Kind  '[F] /stop GET'
 $r = Resolve-Route '/unknown' 'GET';      Assert-Equal 'other' $r.Kind  '[F] /unknown GET'

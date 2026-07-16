@@ -76,7 +76,7 @@
     ('/slide/zzz','POST')  -> kind=slide, cmd='zzz',   valid=$false
   ('/slide/','POST')     -> kind=slide, cmd='',      valid=$false
     ('/slide/next','GET')  -> kind=other   # POST 以外は slide コマンド対象外
-  ('/auth','GET')        -> kind=other   # 未認証でも NowPlaying HTML が返る現行挙動を固定（変更は PR-D）
+  ('/auth','GET')        -> kind=other   # 未認証アクセスは認証ガードで AuthView（Resolve-Route の分類値は維持）
   ('/stop','POST')       -> kind=stop
   ('/stop','GET')        -> kind=other
     ('/unknown','GET')     -> kind=other
