@@ -82,7 +82,8 @@ HTTP は **単一スレッド逐次処理**（`$script:ContextTask` を 1 個だ
 |---|---|---|---|---|
 | GET | `/status` | 不要 | — | 200 `text/plain` : `running` |
 | POST | `/auth` | 不要 | — | Lobby ループと同一（`Invoke-AuthHandler`） |
-| GET | `/auth` | 認証有無に関係なく | — | ⚠ **NowPlaying の HTML をそのまま返す**（認証済みでも 302 `/` にはならない。Lobby ループの GET `/auth` と非対称）。PR-D で修正予定 |
+| GET | `/auth` | 認証済 | — | NowPlaying の HTML を返す（Lobby ループと異なり 302 `/` にはならない。この非対称は既知・意図的に維持）。200 HTML |
+| GET | `/auth` | 未認証 | — | 認証ミドルウェアが Auth 画面を返す（PR-D / #37 / `v1.1.31` で修正。以前は NowPlaying HTML が露出していた）。200 Auth HTML |
 | GET | `/elapsed` | 必要 | 不要 | 200 `text/plain` : 経過ミリ秒（整数） |
 | GET | `/slide/state` | 必要 | 不要 | 200 JSON `{ms,pos,total,lock,mine,black,white,atEnd}`。`total` は初回のみ COM 取得しキャッシュ。`mine` のとき `ownerSeen` を更新（ハートビート） |
 | POST | `/lock/on` | 必要 | — | 未ロック or 自分が owner: `{ok:true,mine:true,busy:false}` / 他端末が保持中: `{ok:false,mine:false,busy:true}` |
@@ -100,7 +101,7 @@ HTTP は **単一スレッド逐次処理**（`$script:ContextTask` を 1 個だ
 
 | # | 挙動 | 影響 | 対応 |
 |---|---|---|---|
-| 1 | 未認証 `GET /auth` が Lobby / NowPlaying の HTML を返す | ファイル名・デッキ名・進行状態が未認証で露出 | PR-D |
+| 1 | 未認証 `GET /auth` が Lobby / NowPlaying の HTML を返す | ファイル名・デッキ名・進行状態が未認証で露出 | ✅ 完了（PR-D / #37 / `v1.1.31`）。両ループとも AuthView(200) を返す |
 | 2 | `POST /stop` に owner チェックが無い | 認証済みの任意端末が投影を停止できる（緊急停止としての意図の可能性あり＝要仕様判断） | PR-E |
 | 3 | セキュリティヘッダ未付与 / token lifetime 無し / 単純一致比較 | 多層防御の欠如 | Phase 2 |
 | 4 | `/status` が未認証で最小状態を返す | 半意図的仕様（offline overlay 用）。最小化は reconnect UX に影響 | 仕様判断（計画書 §12） |
