@@ -90,7 +90,7 @@ HTTP は **単一スレッド逐次処理**（`$script:ContextTask` を 1 個だ
 | POST | `/lock/steal` | 必要 | — | **無条件に奪取**し owner を自分に。`{ok:true,mine:true}`（誤爆防止は UI の長押しに依存） |
 | POST | `/lock/off` | 必要 | owner のみ実効 | owner なら解放。**常に** `{ok:true}` |
 | POST | `/slide/<cmd>` | 必要 | **必要** | `cmd ∈ {next, prev, first, last, blackout, whiteout}`。<br>未知コマンド: `{ok:false,error:'unknown'}`<br>lock 非保持 / 他端末保持: `{ok:false,locked:true}`（サーバ側でも拒否＝多層防御）<br>成功時: COM 実行結果を JSON で返す |
-| POST | `/stop` | 必要 | ⚠ **不要** | ⚠ **owner チェックが無く、認証済みなら任意の端末が投影を停止できる**（cid も見ない）。`ManualStop` として NowPlaying ループを抜け 302 `Location: /`。権限モデルは計画書 §12 の仕様判断事項、PR-E で決着させる |
+| POST | `/stop` | 必要 | **不要（仕様）** | **認証済みなら任意端末が投影を停止できる緊急停止**（cid も lock owner も見ない）。`ManualStop` として NowPlaying ループを抜け 302 `Location: /`。lock 非依存は意図的仕様（PR-E / 案B 確定。lock は後付けの操作権＝運転席の受け渡しで stop とは別概念）。誤操作は UI の 1500ms hold + PRG 302 で緩和。ログ記録は PR-G で後追い |
 | — | 未認証 `/slide/*` `/lock/*` | — | — | **401** JSON `{"ok":false,"auth":false}`（XHR 用。クライアントが再認証へ誘導） |
 | — | 未認証のその他 | — | — | 200 Auth HTML |
 | — | 上記以外 | 必要 | — | 200 NowPlaying HTML |
@@ -102,6 +102,6 @@ HTTP は **単一スレッド逐次処理**（`$script:ContextTask` を 1 個だ
 | # | 挙動 | 影響 | 対応 |
 |---|---|---|---|
 | 1 | 未認証 `GET /auth` が Lobby / NowPlaying の HTML を返す | ファイル名・デッキ名・進行状態が未認証で露出 | ✅ 完了（PR-D / #37 / `v1.1.31`）。両ループとも AuthView(200) を返す |
-| 2 | `POST /stop` に owner チェックが無い | 認証済みの任意端末が投影を停止できる（緊急停止としての意図の可能性あり＝要仕様判断） | PR-E |
+| 2 | `POST /stop` に owner チェックが無い | 認証済みの任意端末が投影を停止できる | **✅ 決定（PR-E・案B）: 脆弱性ではなく「認証済み端末の緊急停止」という意図的仕様と確定**。lock 非依存は設計判断（lock=後付けの操作権、stop=緊急ブレーキ）。誤操作は UI hold + PRG で緩和。ログは PR-G |
 | 3 | セキュリティヘッダ未付与 / token lifetime 無し / 単純一致比較 | 多層防御の欠如 | Phase 2 |
 | 4 | `/status` が未認証で最小状態を返す | 半意図的仕様（offline overlay 用）。最小化は reconnect UX に影響 | 仕様判断（計画書 §12） |

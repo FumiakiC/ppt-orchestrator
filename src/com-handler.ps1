@@ -232,6 +232,12 @@ function Watch-RunningPresentation {
                         }
                     }
                     'stop' {
+                        # 権限モデル（PR-E で仕様確定）: lock/owner チェックは意図的に省略する。
+                        # /stop は「認証済みなら任意の端末が打てる緊急停止」であり、lock（＝後付けの
+                        # スライド操作権＝運転席の受け渡し）には依存しない。'slide' がゲート有りなのと
+                        # 対照的だが、これは設計判断であって漏れではない（案A=owner 必須は steal 迂回・
+                        # 緊急停止劣化のため不採用）。誤操作は UI の 1500ms hold + PRG 302 で緩和。
+                        # 事後解析用のログ記録は PR-G（追記専用ログ基盤）で後追いする。
                         $status = "ManualStop"
                         try {
                             $res.StatusCode = 302

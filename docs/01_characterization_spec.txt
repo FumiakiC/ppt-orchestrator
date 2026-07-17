@@ -79,6 +79,10 @@
   ('/auth','GET')        -> kind=other   # 未認証アクセスは認証ガードで AuthView（Resolve-Route の分類値は維持）
   ('/stop','POST')       -> kind=stop
   ('/stop','GET')        -> kind=other
+      # 注記（PR-E / 案B 確定）: /stop の「権限ポリシー」= 認証済み全端末・lock 非依存の緊急停止、は
+      #   COM ハンドラ（com-handler.ps1 の 'stop' ケース）内にあり純粋関数化されていないため単体テスト対象外。
+      #   route 分類（上記 kind=stop）のみ golden.route で固定し、権限ポリシーは本 spec 文書と
+      #   Windows NowPlaying smoke（docs/05 項目 8・11）で担保する。
     ('/unknown','GET')     -> kind=other
   ※ valid 集合 = next,prev,first,last,blackout,whiteout
 

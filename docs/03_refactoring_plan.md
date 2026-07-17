@@ -204,7 +204,7 @@ flowchart LR
 | 古いモバイル互換性 | `NodeList.forEach`, `crypto.randomUUID`, `Wake Lock`, `ResizeObserver`, Web Animations 等は fallback を持つ箇所もあるが、対象端末を決めて互換性棚卸しを行う。 | P2 |
 | 長押し定数散在 | `data-hold="1500"`, `2000` 等が HTML に散在。意味単位の定数化または設計メモ化を検討。 | P2 |
 | CSP 下地 | `Auth.html` に inline `onclick` があるため厳格 CSP はすぐには難しい。まず `addEventListener` 化し、将来 CSP の下地を作る。 | P2 |
-| `/stop` UI | `/stop` の権限モデル変更に合わせて、Stop ボタンの有効/無効・長押し条件を UI と server で一致させる。 | P1 |
+| `/stop` UI | **✅ 決定（PR-E・案B）: UI 追従は不要**。案B（認証済み全端末の緊急停止・lock 非依存）採用のため、Stop ボタンを lock 状態でゲートしない現行 UI（`remote.js` は `stopBtn` を `armed` に縛らず常時有効）が仕様と一致。現状の 1500ms hold + form POST + PRG 302 を維持。 | — |
 
 ### 5.2 バックエンド / PowerPoint COM
 
@@ -249,7 +249,7 @@ flowchart LR
 | route 分類未抽出 | **✅ 完了（PR-C / #33 / `v1.1.27`）**。`com-handler.ps1` に散在していた route 分類ロジックを `src/utils.ps1` の `Resolve-Route`（純粋関数）へ抽出し、`com-handler.ps1` の dispatch を `switch ($route.Kind)` 化、`golden.route.tests.ps1`（pending 10 件）を有効化した。※ `server.ps1`（Lobby 側）の `$url` 分岐は本 PR では未統合で、Phase 2 作業 10（`ToLowerInvariant` 化）と併せて別途扱う。 | P1 |
 | 認証処理重複 | 未認証 HTML 応答、XHR 401 JSON、`/auth` POST、認証済み `/auth` redirect が複数箇所にある。middleware/helper 化する。 | P1 |
 | 未認証 `GET /auth` | **✅ 完了（PR-D / #37 / `v1.1.31`）**。認証ガード層で修正済み（`server.ps1`=POST /auth のみ素通し・`$isAuthPost` 抽出、`com-handler.ps1`=`$route.Kind -ne 'auth'`）。両ループで未認証 GET /auth は AuthView(200) を返す。以下は修正前の記録: 両ループで再現した。(1) `server.ps1` の認証ガード（L21）は `$url -ne "/auth"` を素通しし、`GET` は `/auth POST` ハンドラにも認証済みリダイレクト（L42）にも該当しないため、既定応答 `$MainHtml`（**Lobby HTML**）に落ちる。(2) `com-handler.ps1` も同構造（L62 のガード素通し → 既定 `else` で `$fullHtml` = **NowPlaying HTML**）。未認証者にファイル名・デッキ名・スライド構成が露出する。修正は「未認証 `GET /auth` → AuthView」の 1 分岐追加で足り、影響範囲は小さい。 | P1 |
-| `/stop` 所有権 | **確定挙動（改訂 1 でコード確認済み）**: `com-handler.ps1:231` の `/stop` ハンドラは認証チェック（ループ先頭の共通ガード）のみで、`/slide/*` が要求する cid + lock owner の検証がない。認証済み端末なら誰でも即時停止できる。なお UI 側は既に form POST + 1500ms hold-to-confirm（`NowPlaying.html:30-31`）+ PRG 302 で誤操作対策済み。高影響操作として lock owner 必須にするか、緊急停止として仕様化（+ログ記録）するか判断が必要。 | P1 |
+| `/stop` 所有権 | **✅ 決定（PR-E・案B 採用）**: `/stop` ハンドラ（`com-handler.ps1` の `'stop'` ケース）は認証チェック（共通ガード）のみで cid + lock owner 検証を持たない＝認証済みなら誰でも即時停止できる。これを**脆弱性ではなく「認証済み端末の緊急停止」という意図的仕様として確定**した（背景: lock は後付けの操作権＝運転席の受け渡し、stop はセッション終了の緊急ブレーキで別概念）。UI は既に form POST + 1500ms hold + PRG 302 で誤操作対策済み。案A（lock owner 必須）は steal 迂回・緊急停止劣化のため不採用。挙動不変。ログは PR-G で後追い。 | — |
 | `/status` 情報露出 | `/status` は未認証で `waiting` / `changing` / `stopping` / `running` を返す。offline overlay のため半意図的だが、仕様化または認証前最小化を検討。 | P2 |
 | body parser | `filename=(.*)`, `pin=([0-9]{6})`, `cid=...` など正規表現中心。characterization 済み挙動を壊さず、段階的に form parser 化を検討。 | P2 |
 | request size | `Read-RequestBody` は文字数上限で打ち切るが `Content-Length` 事前拒否はない。早期 413 相当を検討。 | P2 |
@@ -403,9 +403,9 @@ Phase 0 は、作業 6（ログ方針 / security header 方針 / token 方針の
 1. 未認証 `GET /auth` は常に AuthView を返す。✅ 完了（PR-D / #37 / `v1.1.31`、認証ガード層で実施）
 2. 認証済み `GET /auth` は `/` へ 302 する。（`server.ps1` は既存実装で 302 済み。`com-handler.ps1` は既定で NowPlaying を返す差異があり、統一は helper 化=作業3 で扱う）
 3. XHR API 未認証時は JSON 401、通常画面遷移時は AuthView を返す方針を共通 helper 化する。（PR-D では最小修正のため未着手。auth 応答の重複解消として別 refactor PR で対応予定）
-4. `/stop` の権限モデルを決める。
-   - 案A: 操作権 owner のみ stop 可。
-   - 案B: emergency stop として認証済み全員を許可し、仕様化とログ記録を行う。
+4. `/stop` の権限モデルを決める。✅ 決定（PR-E・案B 採用）。`/stop` は「認証済みなら任意端末が打てる緊急停止」とし lock（操作権）に依存させない。根拠: lock は後付けのスライド操作権＝運転席の受け渡しであり、セッション終了権（stop）とは別概念。案A（owner 必須）は (1) `/lock/steal` が無条件のため steal→stop で迂回可能＝権限の壁にならない、(2) owner 端末のフリーズ/離席時に緊急停止が TTL 15 秒待ちに劣化する、の 2 点で存在意義（緊急停止）と衝突するため不採用。挙動は現状のまま（案B＝現実装）で変更なし。誤操作は UI の 1500ms hold + PRG 302 で緩和済み。仕様化のみ本 PR で行い、ログ記録は PR-G（追記専用ログ基盤）で後追いする。
+   - 案A（不採用）: 操作権 owner のみ stop 可。
+   - 案B（採用）: emergency stop として認証済み全員を許可し仕様化する（ログ記録は PR-G）。
 5. PIN 失敗時の指数バックオフ / 短時間 lockout / global rate limit を検討する。最小修正案: 拒否時にもタイムスタンプを更新して窓をスライドさせる + 失敗回数カウンタで待機秒数を 1→2→4→…と倍化する（既存 `AuthFailedTracker` の値を `@{ Time; Count }` に拡張するだけで実装可能）。
 6. token lifetime / Cookie `Max-Age` / token rotation / logout 相当を検討する。
 7. PIN / token 比較の固定時間 helper 化を検討する。
@@ -565,7 +565,7 @@ Phase 0 は、作業 6（ログ方針 / security header 方針 / token 方針の
 
 1. `Resolve-Route` 抽出と `golden.route.tests.ps1` 有効化。✅ 完了（PR-C / #33 / `v1.1.27`）
 2. 未認証 `GET /auth` 情報露出修正。✅ 完了（PR-D / #37 / `v1.1.31`）
-3. `/stop` 権限モデル決定と実装。
+3. `/stop` 権限モデル決定。✅ 完了（PR-E・案B＝緊急停止を仕様確定、挙動不変。ログ記録は PR-G）。
 4. `Move-ToFinishIfPending` の同名上書き・file lock race 対策。
 5. `Start-Presenter.bat` の UPN 抽出修正。✅ 完了（PR-B / #32 / `v1.1.25`）
 6. Windows 実機スモークの PR gate 化。
@@ -595,7 +595,7 @@ Phase 0 は、作業 6（ログ方針 / security header 方針 / token 方針の
 | PR-B | `.bat` ゴミ行削除 + UPN 抽出修正。完了（#32 / `v1.1.25`） | tests, build, Windows `.bat` smoke |
 | PR-C | `Resolve-Route` 抽出 + route tests 有効化。完了（#33 / `v1.1.27`） | tests, build, Windows API smoke |
 | PR-D | 未認証 `/auth` 修正。✅ 完了（#37 / `v1.1.31`） | tests, build, browser auth smoke |
-| PR-E | `/stop` 権限モデル修正 + UI 追従 | tests, build, Windows NowPlaying smoke |
+| PR-E | `/stop` = 緊急停止（認証済み全端末・lock 非依存）を仕様確定 + drift 防止コメント。案B 採用で挙動不変・UI 追従なし | tests, build（挙動不変のため実機スモークは不要ゲート） |
 | PR-F | finish 同名上書き回避 + lock retry + tests | tests, build, Windows file move smoke |
 | PR-K | パス系 API の `-LiteralPath` 統一 + 空値バリデーション判断（characterization test 先行） | tests, build, Windows path smoke |
 | PR-G | 追記専用ログ + catch 棚卸し | tests, build, manual log review |
@@ -650,7 +650,7 @@ COM / Listener / Console / `.bat` に触れる PR では最低限以下を確認
 
 ## 12. 不確実点・仕様判断が必要な点
 
-- `/stop` は緊急停止として全認証済み端末に許可する意図だった可能性がある。owner 必須化の前に仕様判断が必要。
+- ~~`/stop` は緊急停止として全認証済み端末に許可する意図だった可能性がある。owner 必須化の前に仕様判断が必要。~~ **解消（PR-E・案B 採用）**: owner 確認により、lock は後付けのスライド操作権（運転席の受け渡し）であって stop はセッション終了の緊急ブレーキであると確定。`/stop` は認証済み全端末の緊急停止として仕様化した（案A は steal 迂回・緊急停止劣化のため不採用）。挙動不変・ログは PR-G。
 - token 短命化や logout は「日次 PIN を 1 日使い回す」現行 UX と衝突し得る。
 - `/status` 最小化は offline overlay / reconnect UX に影響する。
 - `ALLOWED_REMOTE=Any` は安全性では弱いが、接続性を優先した運用判断の可能性がある。
