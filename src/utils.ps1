@@ -51,17 +51,50 @@ function Get-PptFiles {
     return Get-ChildItem -Path $Path -File | Where-Object { $_.Extension -in @('.ppt', '.pptx') -and $_.Name -notlike '~$*' } | Sort-Object Name
 }
 
+function Resolve-FinishDestination {
+    param(
+        [string]$FileName,
+        [object[]]$ExistingNames,
+        [datetime]$Timestamp
+    )
+
+    $existing = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($name in $ExistingNames) {
+        if ($null -ne $name) { [void]$existing.Add([string]$name) }
+    }
+
+    if (-not $existing.Contains($FileName)) { return $FileName }
+
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($FileName)
+    $extension = [System.IO.Path]::GetExtension($FileName)
+    $stamp = $Timestamp.ToString('yyyyMMdd-HHmmss', [System.Globalization.CultureInfo]::InvariantCulture)
+
+    $candidate = "${baseName}_$stamp$extension"
+    if (-not $existing.Contains($candidate)) { return $candidate }
+
+    $counter = 2
+    while ($true) {
+        $candidate = "${baseName}_$stamp-$counter$extension"
+        if (-not $existing.Contains($candidate)) { return $candidate }
+        $counter++
+    }
+}
+
 function Move-ToFinishIfPending {
     param(
         [object]$TargetFileItem,
         [string]$FinishFolderPath,
-        [object]$Presentation
+        [object]$Presentation,
+        [int[]]$RetryDelaysMs = @(200, 400, 800)
     )
 
     if (-not $TargetFileItem -or -not $TargetFileItem.FullName) { return $TargetFileItem }
 
+    $sourcePath = [string]$TargetFileItem.FullName
+    $sourceFileName = if ($TargetFileItem.Name) { [string]$TargetFileItem.Name } else { [System.IO.Path]::GetFileName($sourcePath) }
+
     # Idempotent guard: skip when source no longer exists or is already in finish folder.
-    if (-not (Test-Path -LiteralPath $TargetFileItem.FullName)) { return $TargetFileItem }
+    if (-not (Test-Path -LiteralPath $sourcePath)) { return $TargetFileItem }
     if ($TargetFileItem.DirectoryName -eq $FinishFolderPath) { return $TargetFileItem }
 
     # Close an open presentation before move to avoid file lock sharing violations.
@@ -69,12 +102,33 @@ function Move-ToFinishIfPending {
         try { $Presentation.Close() } catch {}
     }
 
+    $delays = if ($null -eq $RetryDelaysMs) { @() } else { @($RetryDelaysMs) }
+
     try {
-        Write-Host " >> Moving to finished folder..." -ForegroundColor Gray
-        return Move-Item -LiteralPath $TargetFileItem.FullName -Destination $FinishFolderPath -Force -PassThru
+        $existingNames = Get-ChildItem -LiteralPath $FinishFolderPath -File -ErrorAction Stop | ForEach-Object { $_.Name }
+        $destinationName = Resolve-FinishDestination -FileName $sourceFileName -ExistingNames $existingNames -Timestamp (Get-Date)
+        # Do not WildcardPattern::Escape here: -Destination receives a literal path, and escaping would corrupt file names like deck[1].pptx.
+        $destinationPath = Join-Path -Path $FinishFolderPath -ChildPath $destinationName
     } catch {
-        Write-Warning "Move failed: $_"
+        Write-Warning "Resolve finish destination failed: $($_.Exception.Message)"
         return $TargetFileItem
+    }
+
+    Write-Host " >> Moving to finished folder..." -ForegroundColor Gray
+    for ($attempt = 0; $attempt -le $delays.Count; $attempt++) {
+        try {
+            if (-not (Test-Path -LiteralPath $sourcePath)) { return $TargetFileItem }
+
+            return Move-Item -LiteralPath $sourcePath -Destination $destinationPath -PassThru -ErrorAction Stop
+        } catch {
+            if ($attempt -ge $delays.Count) {
+                Write-Warning "Move failed: $($_.Exception.Message)"
+                return $TargetFileItem
+            }
+
+            $delay = [int]$delays[$attempt]
+            if ($delay -gt 0) { Start-Sleep -Milliseconds $delay }
+        }
     }
 }
 
