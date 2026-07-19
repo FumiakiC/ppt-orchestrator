@@ -21,7 +21,7 @@ Assert-Equal 'deck_20260718-123456-3.pptx' (Resolve-FinishDestination -FileName 
 Assert-Equal 'DECK_20260718-123456.PPTX' (Resolve-FinishDestination -FileName 'DECK.PPTX' -ExistingNames @('deck.pptx') -Timestamp $ts) 'Resolve-FinishDestination: existing names are compared case-insensitively'
 Assert-Equal 'README_20260718-123456' (Resolve-FinishDestination -FileName 'README' -ExistingNames @('README') -Timestamp $ts) 'Resolve-FinishDestination: extensionless file uses timestamp suffix'
 
-# --- Move-ToFinishIfPending: temp ディレクトリでの移動 5 シナリオ ---
+# --- Move-ToFinishIfPending: temp ディレクトリでの移動 6 シナリオ ---
 $tmpRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("finishtest_" + [System.IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Path $tmpRoot | Out-Null
 
@@ -74,7 +74,18 @@ try {
     Assert-Equal $missingItem.FullName $missingResult.FullName 'Move-ToFinishIfPending: missing source returns original item'
     Assert-True  (-not (Test-Path -LiteralPath (Join-Path $finishDir 'missing.pptx'))) 'Move-ToFinishIfPending: missing source does not create destination'
 
-    # 5. retry give-up: Move-Item が継続失敗したら retry 後に諦め、元 item とソースを保持する
+    # 5. 角括弧リテラル: deck[1].pptx を wildcard と解釈せず、deck1.pptx を上書きしない
+    $bracketPath = Join-Path $sourceDir 'deck[1].pptx'
+    $similarPath = Join-Path $finishDir 'deck1.pptx'
+    Set-Content -LiteralPath $bracketPath -Value 'bracket' -NoNewline
+    Set-Content -LiteralPath $similarPath -Value 'similar' -NoNewline
+    $bracketItem = Get-Item -LiteralPath $bracketPath
+    $bracketMoved = Move-ToFinishIfPending -TargetFileItem $bracketItem -FinishFolderPath $finishDir -Presentation $null -RetryDelaysMs @()
+
+    Assert-Equal 'deck[1].pptx' $bracketMoved.Name 'Move-ToFinishIfPending: bracket file name is moved literally'
+    Assert-Equal 'similar' (Get-Content -LiteralPath $similarPath -Raw) 'Move-ToFinishIfPending: bracket file name does not overwrite similar wildcard match'
+
+    # 6. retry give-up: Move-Item が継続失敗したら retry 後に諦め、元 item とソースを保持する
     $retryPath = Join-Path $sourceDir 'retry.pptx'
     Set-Content -LiteralPath $retryPath -Value 'retry' -NoNewline
     $retryItem = Get-Item -LiteralPath $retryPath

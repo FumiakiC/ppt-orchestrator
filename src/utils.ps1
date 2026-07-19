@@ -59,7 +59,7 @@ function Resolve-FinishDestination {
     )
 
     $existing = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    foreach ($name in @($ExistingNames)) {
+    foreach ($name in $ExistingNames) {
         if ($null -ne $name) { [void]$existing.Add([string]$name) }
     }
 
@@ -104,14 +104,20 @@ function Move-ToFinishIfPending {
 
     $delays = if ($null -eq $RetryDelaysMs) { @() } else { @($RetryDelaysMs) }
 
+    try {
+        $existingNames = Get-ChildItem -LiteralPath $FinishFolderPath -File -ErrorAction Stop | ForEach-Object { $_.Name }
+        $destinationName = Resolve-FinishDestination -FileName $sourceFileName -ExistingNames $existingNames -Timestamp (Get-Date)
+        # Do not WildcardPattern::Escape here: -Destination receives a literal path, and escaping would corrupt file names like deck[1].pptx.
+        $destinationPath = Join-Path -Path $FinishFolderPath -ChildPath $destinationName
+    } catch {
+        Write-Warning "Resolve finish destination failed: $($_.Exception.Message)"
+        return $TargetFileItem
+    }
+
     Write-Host " >> Moving to finished folder..." -ForegroundColor Gray
     for ($attempt = 0; $attempt -le $delays.Count; $attempt++) {
         try {
             if (-not (Test-Path -LiteralPath $sourcePath)) { return $TargetFileItem }
-
-            $existingNames = Get-ChildItem -LiteralPath $FinishFolderPath -File -ErrorAction Stop | ForEach-Object { $_.Name }
-            $destinationName = Resolve-FinishDestination -FileName $sourceFileName -ExistingNames $existingNames -Timestamp (Get-Date)
-            $destinationPath = Join-Path -Path $FinishFolderPath -ChildPath $destinationName
 
             return Move-Item -LiteralPath $sourcePath -Destination $destinationPath -PassThru -ErrorAction Stop
         } catch {
