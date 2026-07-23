@@ -124,8 +124,25 @@ $demoStub = @'
             clearTimeout(el._t);
             el._t = setTimeout(function () { el.style.opacity = '0'; }, 1800);
         }
-        /* ポーリング・API 呼び出しの無効化（offline overlay を出さない） */
-        window.fetch = function () { return Promise.reject(new Error('static mockup')); };
+        /* GET のポーリング系は軽量な固定応答を返す（失敗ループと offline overlay を避け、
+           NowPlaying の経過時間・スライド位置が生きた状態で見えるようにする）。
+           状態を持つ対話デモ（lock 取得・スライド送り）は後続 PR-M の shim で実装する。 */
+        var MOCK_GET = {
+            '/status': { body: 'waiting', type: 'text/plain' },
+            '/slide/state': { body: JSON.stringify({ ms: 372000, pos: 12, total: 24, atEnd: false, lock: false, mine: false, black: false, white: false }), type: 'application/json' }
+        };
+        window.fetch = function (input, init) {
+            var method = (init && init.method ? init.method : 'GET').toUpperCase();
+            var href = (typeof input === 'string') ? input : (input && input.url) || '';
+            var path;
+            try { path = new URL(href, window.location.href).pathname; } catch (e) { path = href; }
+            var hit = method === 'GET' ? MOCK_GET[path] : null;
+            if (hit) {
+                return Promise.resolve(new Response(hit.body, { status: 200, headers: { 'Content-Type': hit.type } }));
+            }
+            if (method !== 'GET') { toast(MSG); }
+            return Promise.resolve(new Response('', { status: 503 }));
+        };
         window.startPolling = function () {};
         /* hold 完了 (requestSubmit) と Auth の form.submit() 双方を封じる */
         document.addEventListener('submit', function (e) { e.preventDefault(); toast(MSG); }, true);
@@ -143,7 +160,15 @@ $demoStub = @'
     </script>
 '@
 
-function Add-DemoStub([string]$Html) {
+function Add-DemoStub([string]$Html, [string]$PageName) {
+    # </head> が見つからない / 複数ある場合は fail fast。テンプレート側で閉じタグの
+    # 削除・改名・大文字化が起きたとき、注入が黙って失敗して生成物が実 submit /
+    # 実 polling を行う状態で公開されるのを防ぐ。
+    $count = ([regex]::Matches($Html, '</head>')).Count
+    if ($count -ne 1) {
+        Write-Error "Cannot inject demo stub into '$PageName': expected exactly one '</head>', found $count. Frontend template may have changed."
+        exit 1
+    }
     return $Html.Replace('</head>', $demoStub + "`n</head>")
 }
 
@@ -221,12 +246,12 @@ footer a{color:#8fa3b8;}
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $pages = [ordered]@{
     'index.html'      = $indexHtml
-    'auth.html'       = (Add-DemoStub $authHtml)
-    'lobby.html'      = (Add-DemoStub $lobbyHtml)
-    'nowplaying.html' = (Add-DemoStub $nowPlayingHtml)
-    'dialog.html'     = (Add-DemoStub $dialogHtml)
-    'processing.html' = (Add-DemoStub $processingHtml)
-    'exit.html'       = (Add-DemoStub $exitHtml)
+    'auth.html'       = (Add-DemoStub $authHtml 'auth.html')
+    'lobby.html'      = (Add-DemoStub $lobbyHtml 'lobby.html')
+    'nowplaying.html' = (Add-DemoStub $nowPlayingHtml 'nowplaying.html')
+    'dialog.html'     = (Add-DemoStub $dialogHtml 'dialog.html')
+    'processing.html' = (Add-DemoStub $processingHtml 'processing.html')
+    'exit.html'       = (Add-DemoStub $exitHtml 'exit.html')
 }
 foreach ($kv in $pages.GetEnumerator()) {
     [System.IO.File]::WriteAllText((Join-Path $OutDir $kv.Key), $kv.Value, $utf8NoBom)
