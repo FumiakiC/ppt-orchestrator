@@ -36,6 +36,10 @@
   - templates.ps1       : HTML/CSS/JS ヒアドキュメント（1.1 で src/frontend へ分離・-f 全廃の対象）
   - ui-console.ps1      : ホスト側コンソールUI（1.4 で描画/ループ分割の対象）。version 直書きもここ。
   - config.ps1 / utils.ps1 : 設定・補助関数（New-SecurePin / Get-PptFiles 等）
+  - build/build-mockup.ps1  : CI限定。src/frontend から静的UIモックアップ(dist/pages/)を生成。
+                             製品dist には同梱しない（Zero-Dependency の例外枠）
+  - build/mockup/demo-shim.js : CI限定。Pages 用の疑似バックエンド。fetch/form送信のみ横取りし、
+                             製品JS(polling/hold/remote)は無改変のまま実走させる
 
 ■ トークン名前空間（1.1 以降の確定規約。CI残骸ガードが依存）★v2で更新
   二層に分け、接頭辞で区別する。許可リスト方式はやめる（増え続けて脆いため）。

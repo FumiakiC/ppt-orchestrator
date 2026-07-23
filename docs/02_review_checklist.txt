@@ -28,6 +28,19 @@
   [ ] hold 系 JS が hold.js に一本化され、重複が解消されている
   [ ] version が単一ソースから注入され、コンソール表示と一致している
 
+■ Pages モックアップに影響する変更（PR-L / PR-M 以降・該当PRのみ）
+  [ ] src/frontend の <head> 構造を変えた場合、build-mockup.ps1 の注入ガード
+      （'</head>' がちょうど1個）が通る（壊れていれば生成が exit 1 で落ちる）
+  [ ] 製品側の HTTP 契約を変えた場合、build/mockup/demo-shim.js の疑似バックエンドが
+      追従している。対象は route の追加/改名・/status が返す文字列・
+      /slide/state の JSON 形状・frontend の fetch 先。
+      ※ 追従漏れは CI では検出できず、Pages のモックアップだけが静かに壊れる
+  [ ] サンプルデッキ名・デモPIN を変えた場合、build-mockup.ps1 側の単一定義
+      （$activeDecks / $finishedDecks / $demoPin）だけを直している
+      （shim 側に値をハードコードして二重管理に戻していない）
+  [ ] モックアップ生成物（dist/pages/）を git にコミットしていない
+  [ ] CI 限定ツールのままで、dist/presentation-controller.ps1 に同梱していない
+
 ■ 将来検討（このロードマップでは“変えない”が、記録として残す候補）
   - PIN 正規表現のアンカー無し緩さ（'pin=1234567'→'123456' / 'xpin='許容）。
     厳格化（^pin=([0-9]{6})$ 等）は別PRの意図的判断として扱う。
