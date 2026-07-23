@@ -37,14 +37,23 @@
         black: false, white: false,
         lockCid: '',            /* '' = ロックなし。'mock-other' = 他端末 */
         startedAt: 0,
-        nextPage: ''            /* Processing 通過後の遷移先 */
+        nextPage: '',           /* Processing 通過後の遷移先 */
+        pendingFinish: ''       /* Dialog 保留中デッキ（確定は next/lobby/exit 時） */
     };
     function loadState() {
+        var base = JSON.parse(JSON.stringify(DEFAULT_STATE));
         try {
             var raw = sessionStorage.getItem('mock_state');
-            if (raw) { return JSON.parse(raw); }
-        } catch (e) { /* fallthrough */ }
-        return JSON.parse(JSON.stringify(DEFAULT_STATE));
+            if (raw) {
+                var saved = JSON.parse(raw);
+                for (var k in DEFAULT_STATE) {
+                    if (DEFAULT_STATE.hasOwnProperty(k) && saved.hasOwnProperty(k)) {
+                        base[k] = saved[k];
+                    }
+                }
+            }
+        } catch (e) { /* fallthrough: 既定値のまま */ }
+        return base;
     }
     function saveState() { try { sessionStorage.setItem('mock_state', JSON.stringify(S)); } catch (e) {} }
     var S = loadState();
@@ -148,6 +157,32 @@
         saveState();
         go('processing.html');
     }
+    function markDone(name) {
+        if (!name) { return; }
+        if (S.done.indexOf(name) === -1) { S.done.push(name); }
+        var i = S.queue.indexOf(name);
+        if (i !== -1) { S.queue.splice(i, 1); }
+    }
+    function resetShowState() {
+        S.pos = 1; S.total = TOTAL_SLIDES; S.atEnd = false;
+        S.black = false; S.white = false;
+        S.lockCid = '';
+        S.startedAt = 0;
+    }
+    function finishPending() {
+        if (S.pendingFinish) {
+            markDone(S.pendingFinish);
+            S.pendingFinish = '';
+        }
+    }
+    function stopShow() {
+        markDone(S.current);
+        S.current = null;
+        resetShowState();
+        S.nextPage = 'lobby.html';
+        saveState();
+        go('processing.html');
+    }
     function pendingAfterCurrent() {
         /* Dialog の Start Next: 未再生キューの先頭（lastPlayed を除く） */
         for (var i = 0; i < S.queue.length; i++) {
@@ -157,10 +192,9 @@
     }
     function endShow() {
         if (S.current) {
-            if (S.done.indexOf(S.current) === -1) { S.done.push(S.current); }
-            var i = S.queue.indexOf(S.current);
-            if (i !== -1) { S.queue.splice(i, 1); }
+            S.pendingFinish = S.current;
             S.current = null;
+            resetShowState();     /* 製品の「再生終了でロック/投影/計時をリセット」を再現（stopShow と対称） */
             saveState();
         }
         go('dialog.html');
@@ -182,10 +216,11 @@
             }
             if (first) { startDeck(first); }
         }
-        else if (actionPath === '/next')  { var n = pendingAfterCurrent(); if (n) { startDeck(n); } }
-        else if (actionPath === '/retry') { startDeck(S.lastPlayed); }
-        else if (actionPath === '/lobby') { go('lobby.html'); }
-        else if (actionPath === '/exit' || actionPath === '/stop') { go('exit.html'); }
+        else if (actionPath === '/next')  { finishPending(); saveState(); var n = pendingAfterCurrent(); if (n) { startDeck(n); } }
+        else if (actionPath === '/retry') { S.pendingFinish = ''; startDeck(S.lastPlayed); }
+        else if (actionPath === '/lobby') { finishPending(); saveState(); go('lobby.html'); }
+        else if (actionPath === '/exit')  { finishPending(); saveState(); go('exit.html'); }
+        else if (actionPath === '/stop')  { stopShow(); }
     }
     document.addEventListener('submit', function (e) {
         e.preventDefault();                   /* 実送信は常に抑止（静的ホスティング） */
