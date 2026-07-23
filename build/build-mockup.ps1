@@ -84,6 +84,15 @@ function Get-MockHtmlHeader([string]$Title, [string]$BgColor) {
 $activeDecks   = @('01_Opening_Keynote.pptx', '02_Product_Roadmap_2026.pptx', '03_Engineering_Deep-Dive.pptx')
 $finishedDecks = @('00_Venue_Guide.pptx')
 $playingDeck   = $activeDecks[1]
+$demoPin       = '123456'
+
+# デモ用の初期値はこのブロックが唯一の定義元。shim（build/mockup/demo-shim.js）と
+# index の案内文は下記から注入・展開され、二重管理によるドリフトを防ぐ。
+$mockDecksJson = (@{ queue = @($activeDecks); done = @($finishedDecks) } | ConvertTo-Json -Compress -Depth 3)
+if ($mockDecksJson -match '</') {
+    Write-Error "Sample deck names must not contain '</' (would break the injected <script> block)"
+    exit 1
+}
 
 # Lobby のリスト HTML は ui-console.ps1 の生成コードと同一マークアップで作る（見た目の忠実度確保）
 function New-MockLobbyList {
@@ -104,8 +113,9 @@ function New-MockLobbyList {
 
 # --- 4) demo shim（</head> 直前へ注入。生成物のみ。src は不変） ---
 # build/mockup/demo-shim.js が疑似バックエンド（fetch 横取り・状態機械・
-# ネットワークシミュレータ・デモパネル）を提供する。ページ識別子を
-# window.__MOCK_PAGE として先に注入し、shim 本体をインライン展開する。
+# ネットワークシミュレータ・デモパネル）を提供する。
+# ページ識別子とデモ用初期値（window.__MOCK_PAGE / __MOCK_PIN / __MOCK_DECKS）を
+# 先に注入し、shim 本体をインライン展開する。shim 側は値を持たずこれらを参照する。
 $demoShimJs = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'mockup/demo-shim.js') -Raw -Encoding UTF8
 
 function Add-DemoShim([string]$Html, [string]$PageId) {
@@ -117,7 +127,8 @@ function Add-DemoShim([string]$Html, [string]$PageId) {
         Write-Error "Cannot inject demo shim into '$PageId': expected exactly one '</head>', found $count. Frontend template may have changed."
         exit 1
     }
-    $inject = "    <script>window.__MOCK_PAGE='$PageId';</script>`n    <script>`n$demoShimJs`n    </script>`n</head>"
+    $bootstrap = "window.__MOCK_PAGE='$PageId';window.__MOCK_PIN='$demoPin';window.__MOCK_DECKS=$mockDecksJson;"
+    $inject = "    <script>$bootstrap</script>`n    <script>`n$demoShimJs`n    </script>`n</head>"
     return $Html.Replace('</head>', $inject)
 }
 
@@ -180,7 +191,7 @@ footer a{color:#8fa3b8;}
 <main>
 <h1>ppt-orchestrator &mdash; UI Mockup</h1>
 <p class="sub">Static mockup of the web remote UI, generated from <code>src/frontend/</code> by CI.</p>
-<p class="note">This is an <b>interactive mockup</b>: there is no PowerPoint or server behind these pages &mdash; a demo shim fakes the backend. Start at <b>Auth</b> (demo PIN: <b>123456</b>), pick a deck in the Lobby, and control the &quot;presentation&quot; from Now Playing. Use the <b>DEMO</b> button (bottom right) to simulate LIVE / SLOW / OFFLINE network conditions and other stage events.</p>
+<p class="note">This is an <b>interactive mockup</b>: there is no PowerPoint or server behind these pages &mdash; a demo shim fakes the backend. Start at <b>Auth</b> (demo PIN: <b>$demoPin</b>), pick a deck in the Lobby, and control the &quot;presentation&quot; from Now Playing. Use the <b>DEMO</b> button (bottom right) to simulate LIVE / SLOW / OFFLINE network conditions and other stage events.</p>
 <a class="card" href="./auth.html"><b>Auth</b><span>PIN keypad (daily 6-digit PIN on the host PC)</span></a>
 <a class="card" href="./lobby.html"><b>Lobby</b><span>Deck queue &mdash; hold a deck or GO to start</span></a>
 <a class="card" href="./nowplaying.html"><b>Now Playing</b><span>Live remote: slide control, lock, blackout</span></a>

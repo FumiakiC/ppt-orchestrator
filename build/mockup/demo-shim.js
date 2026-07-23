@@ -19,15 +19,18 @@
 (function () {
     'use strict';
 
+    /* PAGE / DEMO_PIN / DECKS はビルド時に build/build-mockup.ps1 が注入する。
+       shim 側では値を持たない（PIN とサンプルデッキ名の二重管理を避けるため）。 */
     var PAGE = window.__MOCK_PAGE || 'index';
-    var DEMO_PIN = '123456';
+    var DEMO_PIN = window.__MOCK_PIN || '';
+    var DECKS = window.__MOCK_DECKS || { queue: [], done: [] };
     var TOTAL_SLIDES = 24;
     var PROCESSING_MS = 1600;
 
     /* ---------------- 状態（sessionStorage でページ間永続） ---------------- */
     var DEFAULT_STATE = {
-        queue: ['01_Opening_Keynote.pptx', '02_Product_Roadmap_2026.pptx', '03_Engineering_Deep-Dive.pptx'],
-        done: ['00_Venue_Guide.pptx'],
+        queue: (DECKS.queue || []).slice(),
+        done: (DECKS.done || []).slice(),
         current: null,          /* 再生中デッキ名 */
         lastPlayed: null,       /* Dialog 表示・retry 用 */
         pos: 1, total: TOTAL_SLIDES, atEnd: false,
