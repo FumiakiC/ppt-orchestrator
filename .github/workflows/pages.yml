@@ -1,0 +1,70 @@
+# 静的 UI モックアップを GitHub Pages へデプロイする workflow。
+# 製品ビルド・リリース（build.yml）とは独立。Pages 用の write 権限は deploy ジョブのみに閉じる。
+# 事前条件: リポジトリ Settings → Pages → Source を "GitHub Actions" に設定しておくこと。
+name: Deploy UI Mockup to GitHub Pages
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+# 既定は読み取り専用。Pages 権限は deploy ジョブ側で個別に付与する
+permissions:
+  contents: read
+
+# Pages デプロイは直列化（実行中のデプロイはキャンセルしない）
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-mockup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate static mockup
+        shell: pwsh
+        run: |
+          $ver = "main-" + "${{ github.sha }}".Substring(0, 7)
+          ./build/build-mockup.ps1 -Version $ver
+
+      - name: Guard - no unresolved tokens in mockup pages
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path "dist/pages/*.html" -ErrorAction SilentlyContinue
+          if (-not $files) {
+            Write-Error "No HTML files found in dist/pages/"
+            exit 1
+          }
+          $bad = $files | Where-Object {
+            [regex]::IsMatch((Get-Content $_.FullName -Raw), '%%[A-Z0-9_]+%%')
+          }
+          if ($bad) {
+            Write-Error ("Unresolved token in: " + ($bad.Name -join ', '))
+            exit 1
+          }
+          Write-Host "Mockup guard passed (${$files.Count} pages verified)"
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: 'dist/pages' # ./ を外してパス解決を安定化
+
+  deploy:
+    needs: build-mockup
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write      # Pages へのデプロイに必須
+      id-token: write   # OIDC によるデプロイ検証に必須
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

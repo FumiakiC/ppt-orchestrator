@@ -10,6 +10,9 @@
 
 `ppt-orchestrator` enables seamless, zero-downtime transitions between multiple speakers' slide decks using just a smartphone or tablet. It requires **no third-party software installation** (like Node.js or Python) on the host PC, making it the perfect solution for strict corporate environments where installing external software is prohibited.
 
+> **🖥️ [Try the UI in your browser — static mockup](https://fumiakic.github.io/ppt-orchestrator/)**
+> Generated from `src/frontend/` by CI and deployed to GitHub Pages. There is no live server behind it (actions and page transitions are disabled), but you can explore every screen and feel the hold-to-confirm interaction.
+
 <!-- TODO(owner): Record demo.gif and place at docs/images/demo.gif, then uncomment.
      Storyboard (~20s, phone-view): PIN unlock → Lobby → tap Start → advance a few
      slides on the NowPlaying remote → deck ends → Dialog → tap "Next" → next deck starts.
