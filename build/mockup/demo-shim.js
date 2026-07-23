@@ -194,6 +194,7 @@
         if (S.current) {
             S.pendingFinish = S.current;
             S.current = null;
+            resetShowState();     /* 製品の「再生終了でロック/投影/計時をリセット」を再現（stopShow と対称） */
             saveState();
         }
         go('dialog.html');
