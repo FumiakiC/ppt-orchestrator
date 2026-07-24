@@ -24,6 +24,7 @@
     var PAGE = window.__MOCK_PAGE || 'index';
     var DEMO_PIN = window.__MOCK_PIN || '';
     var DECKS = window.__MOCK_DECKS || { queue: [], done: [] };
+    var SCENARIO = window.__MOCK_SCENARIO || { deck: '', elapsedMs: 0, pos: 1 };
     var TOTAL_SLIDES = 24;
     var PROCESSING_MS = 1600;
 
@@ -57,6 +58,38 @@
     }
     function saveState() { try { sessionStorage.setItem('mock_state', JSON.stringify(S)); } catch (e) {} }
     var S = loadState();
+    function reconcile() {
+        var changed = false;
+        var deck = SCENARIO.deck || '';
+        var pos = Number(SCENARIO.pos) || 1;
+        var elapsedMs = Number(SCENARIO.elapsedMs) || 0;
+        if (PAGE === 'nowplaying' && !S.current) {
+            finishPending();
+            S.current = S.lastPlayed || deck;
+            S.lastPlayed = S.current;
+            resetShowState();
+            S.pos = Math.min(pos, S.total);
+            S.atEnd = (S.pos >= S.total);
+            S.startedAt = Date.now() - elapsedMs;
+            changed = true;
+        } else if (PAGE === 'dialog' && !S.lastPlayed) {
+            S.lastPlayed = deck;
+            S.pendingFinish = deck;
+            S.current = null;
+            changed = true;
+        } else if (PAGE === 'processing' && !S.nextPage) {
+            S.nextPage = 'nowplaying.html';
+            if (!S.current) {
+                resetShowState();
+                S.current = deck;
+                S.lastPlayed = deck;
+                S.startedAt = Date.now();
+            }
+            changed = true;
+        }
+        return changed;
+    }
+    if (reconcile()) { saveState(); }
 
     /* ---------------- ネットワークシミュレータ ---------------- */
     /* live: 40-120ms / slow: 900-1500ms (>600ms で製品側が SLOW 判定) / offline: 失敗 */
@@ -248,7 +281,23 @@
     /* ---------------- 静的 HTML への状態反映（DOM パッチ） ---------------- */
     function patchNowPlaying() {
         var segs = document.querySelectorAll('.nn-seg');
-        for (var i = 0; i < segs.length; i++) { segs[i].textContent = S.current || S.lastPlayed || 'Sample_Deck.pptx'; }
+        var name = S.current || S.lastPlayed || 'Sample_Deck.pptx';
+        var changed = false;
+        for (var i = 0; i < segs.length; i++) {
+            if (segs[i].textContent !== name) {
+                segs[i].textContent = name;
+                changed = true;
+            }
+        }
+        if (changed) {
+            var nameEl = document.querySelector('.np .now-name');
+            if (nameEl) {
+                var prevMaxWidth = nameEl.style.maxWidth;
+                nameEl.style.maxWidth = 'calc(100% - 1px)';
+                requestAnimationFrame(function () { nameEl.style.maxWidth = prevMaxWidth; });
+            }
+            window.dispatchEvent(new Event('resize'));
+        }
     }
     function patchDialog() {
         var nameEl = document.querySelector('.dlg-name');
@@ -308,6 +357,34 @@
         if (goMain) { goMain.innerHTML = 'Start &middot; ' + (pending.length ? '' : 'None'); }
         if (goMain && pending.length) { goMain.appendChild(document.createTextNode(pending[0])); }
         if (goBtn && !pending.length) { goBtn.disabled = true; goBtn.style.opacity = '0.5'; }
+
+        /* 空セクションの文言制御（New-MockLobbyList / ui-console.ps1 と同じ markup）。
+           該当セクションが 0 件なら見出し直後に .empty を挿入、1 件以上なら取り除く。 */
+        var standbySec = secs[0];
+        var doneCount = 0, standbyCount = 0;
+        var allForms = scroll.querySelectorAll('form.deck-form');
+        for (var k = 0; k < allForms.length; k++) {
+            var kNameEl = allForms[k].querySelector('.deck-name');
+            var kName = kNameEl ? kNameEl.textContent : '';
+            if (S.done.indexOf(kName) !== -1) { doneCount++; } else { standbyCount++; }
+        }
+        setEmptyMarker(standbySec, standbyCount === 0, 'No decks queued.');
+        setEmptyMarker(doneSec, doneCount === 0, 'None yet.');
+    }
+    function setEmptyMarker(secEl, isEmpty, text) {
+        if (!secEl) { return; }
+        var next = secEl.nextSibling;
+        var existing = (next && next.nodeType === 1 && next.classList && next.classList.contains('empty')) ? next : null;
+        if (isEmpty) {
+            if (!existing) {
+                var div = document.createElement('div');
+                div.className = 'empty';
+                div.textContent = text;
+                secEl.parentNode.insertBefore(div, secEl.nextSibling);
+            }
+        } else if (existing) {
+            existing.parentNode.removeChild(existing);
+        }
     }
 
     /* ---------------- デモ操作パネル ---------------- */
@@ -329,8 +406,19 @@
             html += '<button data-act="endshow" style="width:100%;margin-bottom:4px;padding:5px;border-radius:5px;border:1px solid #3a4552;background:transparent;color:#c7d1dc;font:11px system-ui,sans-serif;cursor:pointer;">&#127916; End show &rarr; Dialog</button>';
             html += '<button data-act="otherlock" style="width:100%;margin-bottom:4px;padding:5px;border-radius:5px;border:1px solid #3a4552;background:transparent;color:#c7d1dc;font:11px system-ui,sans-serif;cursor:pointer;">&#128274; Other device takes lock</button>';
         }
+        html += '<button data-act="reset" style="width:100%;margin-bottom:6px;padding:5px;border-radius:5px;border:1px solid #3a4552;background:transparent;color:#c7d1dc;font:11px system-ui,sans-serif;cursor:pointer;">&#8634; Reset demo</button>';
         html += '<a href="./index.html" style="display:block;text-align:center;font:11px system-ui,sans-serif;color:#8fa3b8;">&#8962; All screens</a>';
         panel.innerHTML = html;
+    }
+    function resetDemo() {
+        /* 筋書き(mock_state)と通信状態(mock_net)の両方を消す。mock_net を残すと
+           OFFLINE のままリセットされ、初期状態が操作不能画面になるため（PR #47 指摘）。
+           sessionStorage.clear() は使わない（製品 JS の ppt_cid まで消えるため）。 */
+        try {
+            sessionStorage.removeItem('mock_state');
+            sessionStorage.removeItem('mock_net');
+        } catch (er) { /* storage 不可でも遷移は行う */ }
+        go('index.html');
     }
     function buildPanel() {
         var chip = document.createElement('button');
@@ -348,6 +436,7 @@
             if (t.dataset && t.dataset.net) { setNet(t.dataset.net); }
             else if (t.dataset && t.dataset.act === 'endshow') { endShow(); }
             else if (t.dataset && t.dataset.act === 'otherlock') { S.lockCid = 'mock-other'; saveState(); }
+            else if (t.dataset && t.dataset.act === 'reset') { resetDemo(); }
         });
         document.body.appendChild(chip);
         document.body.appendChild(panel);
