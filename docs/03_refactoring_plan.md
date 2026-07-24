@@ -85,6 +85,8 @@ Reviewed by: Claude（全指摘をソースコードと静的突合済み）
 > - §9 の PR 分割表で、改訂 10 に追加した #46 / #47 の 2 行がセル数 2（見出しは 3 列）になっており、表が崩れて描画されていた。1 列目を `(fix)` として 3 列に揃えた。他の表は列数整合を機械確認済みで問題なし。
 > - §4.1 のモジュール責務表が改訂 9 時点の記述のままで、#46 / #47 で入った設計（直リンク時の reconcile、筋書きの注入、shim が管理する `sessionStorage` キーの範囲）が反映されていなかった。改訂 10 本文・`docs/00_ai_context.txt`・`docs/02_review_checklist.txt` は反映済みだったため、責務表のみ追従させた。
 > - 実装側との照合結果: 生成ページ数（8 + `.nojekyll`）、注入値（`__MOCK_PAGE` / `__MOCK_PIN` / `__MOCK_DECKS` / `__MOCK_SCENARIO`）、shim の `sessionStorage` キー（`mock_state` / `mock_net`）、単一定義元の変数（`$activeDecks` / `$finishedDecks` / `$demoPin` / `$scenario*`）はいずれも記述と一致していた。README・`00_ai_context.txt`・`02_review_checklist.txt` も現状と齟齬なし。
+> - Copilot レビュー指摘（§4.1 の注入値列挙が `__MOCK_PAGE` を欠いており、同一文書の本改訂の記述および実装と表記が揃わない）を採用した。ページ識別子とデモ値・筋書きを書き分けたうえで、4 つすべてを記載する形に修正した。
+> - 同種のドリフトが実装側にも 1 件残っている。`build/build-mockup.ps1` の注入処理に付いているコメントが `__MOCK_PAGE` / `__MOCK_PIN` / `__MOCK_DECKS` の 3 つしか挙げておらず、#47 で追加された `__MOCK_SCENARIO` が漏れている（注入コード自体は 4 つとも正しい）。本改訂は docs 限定のため、次にモックアップへ触れる PR で追従する。
 
 ---
 
@@ -211,7 +213,7 @@ flowchart LR
 |---|---|
 | `Start-Presenter.bat` | 管理者昇格、URLACL 登録、Firewall rule 追加、PowerShell 起動、終了時 cleanup |
 | `build/build.ps1` | `src/*.ps1` 結合、`src/frontend/**` の `%%BUILD_*%%` トークン注入、`dist/` 生成 |
-| `build/build-mockup.ps1` | **CI 限定**。`src/frontend/**` から静的 UI モックアップ（`dist/pages/`）を生成。実行時の組み立てを模倣し、demo shim を `</head>` 直前に注入する。デモ値と筋書き（PIN / サンプルデッキ / 直リンク時の初期シナリオ）の**唯一の定義元**であり、`window.__MOCK_PIN` / `__MOCK_DECKS` / `__MOCK_SCENARIO` として注入する。製品 `dist` には非同梱 |
+| `build/build-mockup.ps1` | **CI 限定**。`src/frontend/**` から静的 UI モックアップ（`dist/pages/`）を生成。実行時の組み立てを模倣し、demo shim を `</head>` 直前に注入する。あわせてページ識別子を `window.__MOCK_PAGE` として注入し、デモ値と筋書き（PIN / サンプルデッキ / 直リンク時の初期シナリオ）の**唯一の定義元**として `window.__MOCK_PIN` / `__MOCK_DECKS` / `__MOCK_SCENARIO` を注入する。製品 `dist` には非同梱 |
 | `build/mockup/demo-shim.js` | **CI 限定**。Pages 専用の疑似バックエンド。`fetch` と form 送信を横取りし `/status` / `/slide/*` / `/lock/*` を模擬する。製品 JS は無改変のまま実走させる。値は持たず注入値のみを参照し、Lobby 起点を前提にせずページ入場時に不足状態を reconcile する（直リンク対応）。`sessionStorage` は自分が作ったキー（`mock_state` / `mock_net`）のみを管理する |
 | `config.ps1` | パラメータ、Win32 `Add-Type`、PIN/Token 生成、状態ファイル保存、ACL hardening |
 | `templates.ps1` | ビルド時トークンを含む HTML テンプレート保持 |
