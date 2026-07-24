@@ -410,6 +410,16 @@
         html += '<a href="./index.html" style="display:block;text-align:center;font:11px system-ui,sans-serif;color:#8fa3b8;">&#8962; All screens</a>';
         panel.innerHTML = html;
     }
+    function resetDemo() {
+        /* 筋書き(mock_state)と通信状態(mock_net)の両方を消す。mock_net を残すと
+           OFFLINE のままリセットされ、初期状態が操作不能画面になるため（PR #47 指摘）。
+           sessionStorage.clear() は使わない（製品 JS の ppt_cid まで消えるため）。 */
+        try {
+            sessionStorage.removeItem('mock_state');
+            sessionStorage.removeItem('mock_net');
+        } catch (er) { /* storage 不可でも遷移は行う */ }
+        go('index.html');
+    }
     function buildPanel() {
         var chip = document.createElement('button');
         chip.textContent = 'DEMO';
@@ -426,7 +436,7 @@
             if (t.dataset && t.dataset.net) { setNet(t.dataset.net); }
             else if (t.dataset && t.dataset.act === 'endshow') { endShow(); }
             else if (t.dataset && t.dataset.act === 'otherlock') { S.lockCid = 'mock-other'; saveState(); }
-            else if (t.dataset && t.dataset.act === 'reset') { try { sessionStorage.removeItem('mock_state'); } catch (er) {} go('index.html'); }
+            else if (t.dataset && t.dataset.act === 'reset') { resetDemo(); }
         });
         document.body.appendChild(chip);
         document.body.appendChild(panel);
