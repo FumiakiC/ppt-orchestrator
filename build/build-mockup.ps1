@@ -83,13 +83,24 @@ function Get-MockHtmlHeader([string]$Title, [string]$BgColor) {
 # --- 3) デモ用サンプルデータ（実行時トークンへ注入する値） ---
 $activeDecks   = @('01_Opening_Keynote.pptx', '02_Product_Roadmap_2026.pptx', '03_Engineering_Deep-Dive.pptx')
 $finishedDecks = @('00_Venue_Guide.pptx')
-$playingDeck   = $activeDecks[1]
 $demoPin       = '123456'
+
+# 直リンク（各ページを新規タブで直叩き）時に成立させる筋書き。ここが唯一の定義元で、
+# NowPlaying の %%DECK%% / Dialog の %%DIALOG_FILE%% のビルド時値と shim への注入値の
+# 両方をここから導出する（値の二重管理を避ける）。
+$scenarioDeck      = $finishedDecks[0]   # 00_Venue_Guide.pptx（直リンク時に発表中扱いにするデッキ）
+$scenarioElapsedMs = 432000              # 07:12 経過（既に発表中）
+$scenarioPos       = 9                   # 9 / 24
+$scenarioNextDeck  = $activeDecks[0]     # Dialog の Start Next 表示に使う次デッキ
+
+# 直リンク時にビルド時の表示（%%DECK%% / %%DIALOG_FILE%%）と JS 適用後の表示を一致させる。
+$playingDeck = $scenarioDeck
 
 # デモ用の初期値はこのブロックが唯一の定義元。shim（build/mockup/demo-shim.js）と
 # index の案内文は下記から注入・展開され、二重管理によるドリフトを防ぐ。
 $mockDecksJson = (@{ queue = @($activeDecks); done = @($finishedDecks) } | ConvertTo-Json -Compress -Depth 3)
-if ($mockDecksJson -match '</') {
+$mockScenarioJson = (@{ deck = $scenarioDeck; elapsedMs = $scenarioElapsedMs; pos = $scenarioPos } | ConvertTo-Json -Compress -Depth 3)
+if ($mockDecksJson -match '</' -or $mockScenarioJson -match '</') {
     Write-Error "Sample deck names must not contain '</' (would break the injected <script> block)"
     exit 1
 }
@@ -98,12 +109,14 @@ if ($mockDecksJson -match '</') {
 function New-MockLobbyList {
     $listHtml = "<div class='list-scroll'>"
     $listHtml += "<div class='sec'><span class='tag tag-standby'>STANDBY</span> Pending</div>"
+    if (!$activeDecks) { $listHtml += "<div class='empty'>No decks queued.</div>" }
     $idx = 0
     foreach ($fname in $activeDecks) {
         $idx++
         $listHtml += "<form method='post' action='/select' class='deck-form'><input type='hidden' name='filename' value='$fname'><button type='button' class='deck hold' data-hold='1500' data-hint='Press and hold to start this deck' style='--chg-edge:#f5a623;--chg-track:rgba(245,166,35,.18);--chg-glow:rgba(245,166,35,.55)'><span class='deck-badge'>$idx</span><span class='deck-name'>$fname</span><span class='deck-cue'>&#9654;</span></button></form>"
     }
     $listHtml += "<div class='sec'><span class='tag tag-done'>DONE</span> Completed</div>"
+    if (!$finishedDecks) { $listHtml += "<div class='empty'>None yet.</div>" }
     foreach ($fname in $finishedDecks) {
         $listHtml += "<form method='post' action='/select' class='deck-form'><input type='hidden' name='filename' value='$fname'><button type='button' class='deck finished hold' data-hold='1500' data-hint='Press and hold to start this deck' style='--chg-edge:#5af0a0;--chg-track:rgba(52,210,123,.18);--chg-glow:rgba(52,210,123,.5)'><span class='deck-badge'>&#10003;</span><span class='deck-name'>$fname</span></button></form>"
     }
@@ -127,7 +140,7 @@ function Add-DemoShim([string]$Html, [string]$PageId) {
         Write-Error "Cannot inject demo shim into '$PageId': expected exactly one '</head>', found $count. Frontend template may have changed."
         exit 1
     }
-    $bootstrap = "window.__MOCK_PAGE='$PageId';window.__MOCK_PIN='$demoPin';window.__MOCK_DECKS=$mockDecksJson;"
+    $bootstrap = "window.__MOCK_PAGE='$PageId';window.__MOCK_PIN='$demoPin';window.__MOCK_DECKS=$mockDecksJson;window.__MOCK_SCENARIO=$mockScenarioJson;"
     $inject = "    <script>$bootstrap</script>`n    <script>`n$demoShimJs`n    </script>`n</head>"
     return $Html.Replace('</head>', $inject)
 }
@@ -145,7 +158,7 @@ $lobbyHtml = $lobbyHtml.Replace('%%LOBBY_LIST%%',      [string](New-MockLobbyLis
 $lobbyHtml = $headController + $lobbyHtml + $pollingScript + '</div></body></html>'
 
 # Dialog（次デッキあり変種。ui-console.ps1 の生成値と同一）
-$encNext = $activeDecks[2]
+$encNext = $scenarioNextDeck
 $dialogHtml = $viewDialog
 $dialogHtml = $dialogHtml.Replace('%%DIALOG_NEXT_CLS%%',   ' hold')
 $dialogHtml = $dialogHtml.Replace('%%DIALOG_NEXT_STATE%%', "data-hold='1500' data-hint='Press and hold to start next' style='--chg-edge:#5af0a0;--chg-track:rgba(52,210,123,.22);--chg-glow:rgba(52,210,123,.7)'")
