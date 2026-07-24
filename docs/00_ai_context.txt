@@ -39,7 +39,9 @@
   - build/build-mockup.ps1  : CI限定。src/frontend から静的UIモックアップ(dist/pages/)を生成。
                              製品dist には同梱しない（Zero-Dependency の例外枠）
   - build/mockup/demo-shim.js : CI限定。Pages 用の疑似バックエンド。fetch/form送信のみ横取りし、
-                             製品JS(polling/hold/remote)は無改変のまま実走させる
+                             製品JS(polling/hold/remote)は無改変のまま実走させる。
+                             状態はページ入場時に reconcile し、直リンクでも成立させる。
+                             デモ値・筋書きの定義元は build-mockup.ps1 側
 
 ■ トークン名前空間（1.1 以降の確定規約。CI残骸ガードが依存）★v2で更新
   二層に分け、接頭辞で区別する。許可リスト方式はやめる（増え続けて脆いため）。

@@ -35,8 +35,15 @@
       追従している。対象は route の追加/改名・/status が返す文字列・
       /slide/state の JSON 形状・frontend の fetch 先。
       ※ 追従漏れは CI では検出できず、Pages のモックアップだけが静かに壊れる
-  [ ] サンプルデッキ名・デモPIN を変えた場合、build-mockup.ps1 側の単一定義
-      （$activeDecks / $finishedDecks / $demoPin）だけを直している
+  [ ] モックアップの各ページ（nowplaying / dialog / processing）に直リンクしても
+      筋書きが成立する（タイマーが進む・デッキ名が空にならない・遷移先が壊れない）
+  [ ] ビルド時トークンと shim の復元値が同じシナリオ定義から出ている
+      （表示のチラつき・次デッキの不一致がない）
+  [ ] shim が sessionStorage に持つキーを増減した場合、Reset demo が全部消している
+  [ ] shim は自分が作ったキーだけを消す
+      （sessionStorage.clear() で製品所有の ppt_cid を巻き込まない）
+  [ ] サンプルデッキ名・デモPIN・筋書き用の変数を変えた場合、build-mockup.ps1 側の
+      単一定義（$activeDecks / $finishedDecks / $demoPin / $scenario*）だけを直している
       （shim 側に値をハードコードして二重管理に戻していない）
   [ ] モックアップ生成物（dist/pages/）を git にコミットしていない
   [ ] CI 限定ツールのままで、dist/presentation-controller.ps1 に同梱していない
