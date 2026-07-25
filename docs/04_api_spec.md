@@ -1,6 +1,6 @@
 # docs/04_api_spec.md — HTTP API 仕様（現状挙動の正本）
 
-対象: `src/server.ps1`（Lobby / Dialog ループ）、`src/com-handler.ps1`（NowPlaying ループ）、`src/auth.ps1`、`src/utils.ps1` @ `a4278b5`
+対象: `src/server.ps1`（Lobby / Dialog ループ）、`src/com-handler.ps1`（NowPlaying ループ）、`src/auth.ps1`、`src/utils.ps1` @ `c93e194`
 
 > **本書の性格**: これは「あるべき仕様」ではなく **現状挙動の characterization（記述）** である。
 > ⚠ 印の項目は `docs/03_refactoring_plan.md` で修正対象として確定済みの挙動であり、

@@ -88,6 +88,17 @@ Reviewed by: Claude（全指摘をソースコードと静的突合済み）
 > - Copilot レビュー指摘（§4.1 の注入値列挙が `__MOCK_PAGE` を欠いており、同一文書の本改訂の記述および実装と表記が揃わない）を採用した。ページ識別子とデモ値・筋書きを書き分けたうえで、4 つすべてを記載する形に修正した。
 > - 同種のドリフトが実装側にも 1 件残っている。`build/build-mockup.ps1` の注入処理に付いているコメントが `__MOCK_PAGE` / `__MOCK_PIN` / `__MOCK_DECKS` の 3 つしか挙げておらず、#47 で追加された `__MOCK_SCENARIO` が漏れている（注入コード自体は 4 つとも正しい）。本改訂は docs 限定のため、次にモックアップへ触れる PR で追従する。
 
+> **改訂 12（2026-07-25）**: PR-N（#50）が main に squash merge され、`v1.1.44` として自動リリースされた。URL バーを常に `/` に固定する応答正規化を実装した。主な点:
+> - 発端は「SDUI 化（URL パス分岐をやめて専用コンポーネント方式へ）」の検討だったが、動機の実体は URL パス表示の固定であり、全面 SDUI 化は不採用とした（§12 に判断を記録）。どのパスを GET しても状態に応じた正しい画面が返る現行設計では、URL のパス表示はもともと情報として意味を持っていなかった。
+> - Lobby/Dialog ループ: アクション POST（`/start` `/next` `/retry` `/lobby` `/select` `/exit`）の「200 + Processing HTML 直接応答」を廃止し、303 See Other で `/` へ戻す PRG に統一した。switch に該当しない未知の POST パスも状態を変えずに 303 とする。副次効果として、Processing 画面のリロードが POST 再送信（アクション二重発火）になり得た問題も解消した。
+> - GET 正規化: 認証済み GET は `/` と `/status` 以外を 302 で `/` へ戻す。旧「認証済み `GET /auth` → 302」と `GET /exit` 特例を統合し、`/exit` URL は廃止した（owner 仕様判断: 終了画面だけ `/exit` を残す案は不採用）。未認証フロー（AuthView 200 / PR-D 挙動）と `POST /auth` 失敗時の 200 応答は非接触。
+> - NowPlaying ループ: `switch ($route.Kind)` の `default` を正規化し、`/` のみ NowPlaying HTML を返すようにした。認証済み `GET /auth` が Lobby ループと異なり 302 しなかった非対称（`docs/04_api_spec.md` §4 の既知事項）はこれで解消した。
+> - `templates.ps1` の PollingScript から `statusRedirects: { 'stopping': '/exit' }` を削除した。`stopping` は expected 外として既定リダイレクト `/` に落ち、`/` が `ShuttingDown` 中は Exit HTML を返すため着地は同一である。`build/build-mockup.ps1` の複製行も同期した（改訂 9 の shim 契約追従・人手確認）。`polling.js` の `statusRedirects` 機構自体は未使用化したが除去は PR-J で扱う。
+> - **PRG が成立する前提を明文化した**: 303 の直後にブラウザが投げる `GET /` が Processing HTML を受け取れるのは、`src/ui-console.ps1` の「アクション確定後 `actionSetTime` から 800ms はループを抜けない」猶予の内にリクエストが届くためである（`Exit` はこの規則の対象外だが 5 秒の `shutdownDeadline` が同じ役割を果たす）。この猶予を縮めるとリダイレクト先が PowerPoint 起動待ちのキューに埋もれ、Processing ではなく白紙ページになる。CI では検出できないため、`server.ps1` と `ui-console.ps1` の双方に相互参照コメントを入れた。
+> - `Resolve-Route` は不変で、テスト基準値は `PASS 80 / FAIL 0 / PENDING 0` のまま。ループ内の応答コードは CI で単体化できないため、Windows 実機のブラウザスモーク（各アクション後の URL が `/`・リロード安全性・他端末の `stopping` 追従・直打ちの正規化・NowPlaying 側の非対称解消・未認証フロー不変・Pages モックアップの遷移）で担保した。
+> - GET / POST 以外のメソッドの扱いが変わった。末尾の状態分岐から `$req.HttpMethod -eq "GET"` 条件を外したため、HEAD 等が `ShuttingDown` 中に Exit HTML を受け取るようになる（従来は Lobby HTML）。ブラウザが通らない経路であり実害はないが、挙動差として記録する。
+> - 改訂 11 が「次にモックアップへ触れる PR で追従する」とした残課題は**未消化**である。PR-N は `build/build-mockup.ps1` に触れた（PollingScript の同期）が、注入処理のコメントに `__MOCK_SCENARIO` が漏れている件は直していない。引き続き、次にモックアップへ触れる PR で追従する。
+
 ---
 
 ## 1. 確認範囲
@@ -595,6 +606,7 @@ Phase 0 は、作業 6（ログ方針 / security header 方針 / token 方針の
 4. 古い mobile browser 互換性を棚卸しする。
 5. 長押し時間・文言・hint の意味を docs 化または定数化する。
 6. `/stop` 権限モデル変更に UI を追従させる。
+7. アクション POST の PRG 統一 + GET 正規化により URL バーを `/` に固定する。✅ 完了（PR-N / #50 / `v1.1.44`）
 
 優先度: P2
 
@@ -632,6 +644,7 @@ Phase 0 は、作業 6（ログ方針 / security header 方針 / token 方針の
 7. `ALLOWED_REMOTE` 既定値見直し。
 8. adapter/IP 表示改善。
 9. GitHub Pages UI モックアップの保守（製品側 HTTP 契約・デモの筋書き・状態モデルを変えた際の shim 追従。✅ 初期実装は PR-L / PR-M で完了し、後続 fix #46 / #47 まで反映済み）。
+10. URL バー固定（アクション POST の PRG 統一 + GET 正規化）。✅ 完了（PR-N / #50 / `v1.1.44`）
 
 ---
 
@@ -653,6 +666,7 @@ Phase 0 は、作業 6（ログ方針 / security header 方針 / token 方針の
 | PR-J | Frontend polling / compatibility cleanup | tests, build, mobile browser smoke |
 | PR-L | 静的 UI モックアップ生成 + GitHub Pages デプロイ CI + README 導線。✅ 完了（#43 / `v1.1.37`） | tests, build, Pages 表示確認（製品非接触のため実機スモークは不要ゲート） |
 | PR-M | モックアップの対話 demo shim（fetch/form intercept の疑似バックエンド + 通信状態シミュレータ）。✅ 完了（#44 / `v1.1.38`） | tests, build, Pages 操作確認（同上） |
+| PR-N | アクション POST の PRG 統一（303 → `/`）+ GET 正規化 + PollingScript / モック追従 + `docs/04` 更新。✅ 完了（#50 / `v1.1.44`） | tests, build, Windows browser smoke |
 | (fix) | モックアップ Hold to Stop 遷移先修正。✅ 完了（#46 / `v1.1.40`） | tests, build, Pages 操作確認（製品非接触のため実機スモークは不要ゲート） |
 | (fix) | モックアップ直リンク状態復元 + Reset demo 完全初期化。✅ 完了（#47 / `v1.1.41`） | tests, build, Pages 操作確認（同上） |
 
@@ -712,6 +726,7 @@ COM / Listener / Console / `.bat` に触れる PR では最低限以下を確認
 - HTTP 並列化は COM STA と競合するため、別途設計レビューが必要。
 - モックアップ shim（`build/mockup/demo-shim.js`）は製品側の HTTP 契約に依存するが、その追従は CI では検証できない。route / `/status` の返す文字列 / `/slide/state` の JSON 形状を変える PR では、レビュー時に人手で追従を確認する必要がある。CI で検出できないのは HTTP 契約の追従だけでなく、デモの筋書き・状態モデル（各ページ直リンク時の reconcile・ビルド時トークンと shim 復元値の一致・Reset demo の初期化範囲）の追従も同様であり、いずれも人手確認になる（自動検証の要否は将来判断）。
 - ~~`docs/` は現行ルール上 `.gitignore` 対象のローカル専用資料である可能性が高い。~~ **解消（改訂 1）**: コミット `76ef4d8` (chore: track docs directory in git) で `docs/` は Git 管理に移行済み。
+- **全面 SDUI 化は不採用（改訂 12 / PR-N で解決）**: 「URL パス分岐をやめて専用コンポーネント方式へ」を検討したが、動機は URL パス表示の固定であり、応答の PRG 統一 + GET 正規化（PR-N / #50）で解決した。全面 SDUI 化は §13 の方針（characterization-first・小さな PR）、触るなリスト（認証成功時の 302 フロー・実行時 HtmlEncode というサーバレンダ前提の XSS 防御）、フルページ + form POST が持つ「リロードで必ず復旧する」現場信頼性、および 2 ループ構造（`server.ps1` / `com-handler.ps1` の双方が同一 JSON 契約でシェルと状態を返す必要が生じる）とモックアップ shim の HTTP 契約依存と衝突するため採用しない。将来コンポーネント化の需要が出た場合は、ビルド時の partial 分割（`dist` が不変であれば挙動保存を build 検証だけで示せる方式）を第一候補とする。
 
 ---
 
