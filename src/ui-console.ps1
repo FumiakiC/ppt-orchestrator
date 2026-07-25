@@ -315,6 +315,8 @@
         }
 
         # --- 終了判定 ---
+        # 800ms の猶予は server.ps1 の PRG が依存する（303 後の GET / をこの窓で処理して
+        # Processing を返す）。縮めるとリダイレクト先が白紙化するため変更しないこと。
         if ($resultAction -ne $null -and $resultAction -ne "Exit") {
             if ($actionSetTime -and ((Get-Date) - $actionSetTime).TotalMilliseconds -gt 800) {
                 break

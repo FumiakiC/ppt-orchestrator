@@ -1,6 +1,6 @@
 # docs/04_api_spec.md — HTTP API 仕様（現状挙動の正本）
 
-対象: `src/server.ps1`（Lobby / Dialog ループ）、`src/com-handler.ps1`（NowPlaying ループ）、`src/auth.ps1`、`src/utils.ps1` @ `c99e6d8`
+対象: `src/server.ps1`（Lobby / Dialog ループ）、`src/com-handler.ps1`（NowPlaying ループ）、`src/auth.ps1`、`src/utils.ps1` @ `a4278b5`
 
 > **本書の性格**: これは「あるべき仕様」ではなく **現状挙動の characterization（記述）** である。
 > ⚠ 印の項目は `docs/03_refactoring_plan.md` で修正対象として確定済みの挙動であり、
@@ -59,16 +59,17 @@ HTTP は **単一スレッド逐次処理**（`$script:ContextTask` を 1 個だ
 |---|---|---|---|---|
 | GET | `/status` | 不要 | 状態文字列のみ返す（offline overlay 用の半意図的仕様） | 200 `text/plain` : `waiting` / `changing` / `stopping` |
 | POST | `/auth` | 不要 | PIN 照合（throttle 適用） | 成功: **302** `Location: /` + `Set-Cookie`<br>失敗/throttle: **200** Auth 画面 HTML（error 表示） |
-| GET | `/auth` | 認証済 | ルートへ戻す | 302 `Location: /` |
+| GET | `/auth` | 認証済 | GET 正規化に統合（下記） | 302 `Location: /` |
 | GET | `/auth` | 未認証 | 認証ミドルウェアが Auth 画面を返す（PR-D / #37 / `v1.1.31` で修正。以前は Lobby/NowPlaying HTML が露出していた） | 200 Auth HTML |
-| POST | `/start` | 必要 | `ResultAction = Start` | 200 Processing HTML |
-| POST | `/next` | 必要 | `ResultAction = Next` | 200 Processing HTML |
-| POST | `/retry` | 必要 | `ResultAction = Retry` | 200 Processing HTML |
-| POST | `/lobby` | 必要 | `ResultAction = Lobby` | 200 Processing HTML |
-| POST | `/select` | 必要 | body の `filename=(.*)` を UrlDecode して選択（`ResultFile`）。**不一致なら何もせず Processing を返す** | 200 Processing HTML |
-| POST | `/exit` | 必要 | シャットダウン開始（`ShuttingDown=true`, deadline = now+5s）。**PRG リダイレクト**でフォーム再送信による誤終了を防ぐ | 303 `Location: /exit` |
-| GET | `/exit` | 必要 | `ShuttingDown` なら Exit 画面。そうでなければルートへ戻す | 200 Exit HTML / 302 `Location: /` |
-| GET | 上記以外（`/` 含む） | 必要 | Lobby / Dialog 本体。ただし `ShuttingDown` → Exit HTML、`ResultAction != null` → Processing HTML（他端末操作時のチラつき防止） | 200 HTML |
+| POST | `/start` | 必要 | `ResultAction = Start` | 303 `Location: /`（PRG） |
+| POST | `/next` | 必要 | `ResultAction = Next` | 303 `Location: /`（PRG） |
+| POST | `/retry` | 必要 | `ResultAction = Retry` | 303 `Location: /`（PRG） |
+| POST | `/lobby` | 必要 | `ResultAction = Lobby` | 303 `Location: /`（PRG） |
+| POST | `/select` | 必要 | body の `filename=(.*)` を UrlDecode して選択（`ResultFile`）。**不一致なら状態を変えない** | 303 `Location: /`（PRG） |
+| POST | `/exit` | 必要 | シャットダウン開始（`ShuttingDown=true`, deadline = now+5s）。**PRG リダイレクト**でフォーム再送信による誤終了を防ぐ | 303 `Location: /`（PRG） |
+| POST | 上記以外 | 必要 | 状態を変えない | 303 `Location: /`（PRG） |
+| GET | `/` 以外（`/status` 除く） | 必要 | **GET 正規化**: URL バーを `/` に固定（旧 `GET /auth` 302・`GET /exit` 特例を統合。PR-N） | 302 `Location: /` |
+| GET | `/` | 必要 | Lobby / Dialog 本体。ただし `ShuttingDown` → Exit HTML、`ResultAction != null` → Processing HTML（他端末操作時のチラつき防止） | 200 HTML |
 | — | 未認証の上記以外 | — | **Auth 画面 HTML を 200 で返す**（401 は返さない） | 200 Auth HTML |
 
 ## 4. NowPlaying ループ（`src/com-handler.ps1`）
@@ -82,7 +83,7 @@ HTTP は **単一スレッド逐次処理**（`$script:ContextTask` を 1 個だ
 |---|---|---|---|---|
 | GET | `/status` | 不要 | — | 200 `text/plain` : `running` |
 | POST | `/auth` | 不要 | — | Lobby ループと同一（`Invoke-AuthHandler`） |
-| GET | `/auth` | 認証済 | — | NowPlaying の HTML を返す（Lobby ループと異なり 302 `/` にはならない。この非対称は既知・意図的に維持）。200 HTML |
+| GET | `/auth` | 認証済 | — | 302 `Location: /`（route `other` の正規化に統合。旧来の「302 しない非対称」は PR-N で解消） |
 | GET | `/auth` | 未認証 | — | 認証ミドルウェアが Auth 画面を返す（PR-D / #37 / `v1.1.31` で修正。以前は NowPlaying HTML が露出していた）。200 Auth HTML |
 | GET | `/elapsed` | 必要 | 不要 | 200 `text/plain` : 経過ミリ秒（整数） |
 | GET | `/slide/state` | 必要 | 不要 | 200 JSON `{ms,pos,total,lock,mine,black,white,atEnd}`。`total` は初回のみ COM 取得しキャッシュ。`mine` のとき `ownerSeen` を更新（ハートビート） |
@@ -93,7 +94,7 @@ HTTP は **単一スレッド逐次処理**（`$script:ContextTask` を 1 個だ
 | POST | `/stop` | 必要 | **不要（仕様）** | **認証済みなら任意端末が投影を停止できる緊急停止**（cid も lock owner も見ない）。`ManualStop` として NowPlaying ループを抜け 302 `Location: /`。lock 非依存は意図的仕様（PR-E / 案B 確定。lock は後付けの操作権＝運転席の受け渡しで stop とは別概念）。誤操作は UI の 1500ms hold + PRG 302 で緩和。ログ記録は PR-G で後追い |
 | — | 未認証 `/slide/*` `/lock/*` | — | — | **401** JSON `{"ok":false,"auth":false}`（XHR 用。クライアントが再認証へ誘導） |
 | — | 未認証のその他 | — | — | 200 Auth HTML |
-| — | 上記以外 | 必要 | — | 200 NowPlaying HTML |
+| — | 上記以外 | 必要 | — | `/` は 200 NowPlaying HTML。`/` 以外は 302（GET）/ 303（POST）`Location: /`（URL 正規化・PR-N） |
 
 ---
 

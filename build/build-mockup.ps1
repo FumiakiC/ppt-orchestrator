@@ -71,7 +71,7 @@ $viewAuth       = Resolve-BuildTokens (Read-Frontend 'views/Auth.html')
 # PollingScript は src/templates.ps1 の定義と同一内容（Lobby / Dialog ページ用）。
 $pollingScript = @'
     <script>
-        window.startPolling(['waiting'], '/', { defaultDelay: 300, statusRedirects: { 'stopping': '/exit' } });
+        window.startPolling(['waiting'], '/', { defaultDelay: 300 });
     </script>
 '@
 
