@@ -217,8 +217,19 @@ function New-DirectoryIfMissing {
     # top-level state block below calls this at load time, before utils.ps1 exists.
     # New-Item has no -LiteralPath, so bracketed paths would be treated as wildcards.
     # .NET CreateDirectory is literal, idempotent, and creates intermediate directories.
+    # Called unconditionally on purpose: a Test-Path guard would be a TOCTOU race, and it
+    # also reports True for an existing *file*, which would silently skip creation and
+    # defer the failure to a later, vaguer error. CreateDirectory fails here instead.
+    # The raw .NET message ('The file ... already exists.') does not say a folder was being
+    # created, so it is rethrown with context. Rethrow (not Write-Error + exit) is required:
+    # the state-file caller catches this and degrades to a warning instead of aborting.
     param([ValidateNotNullOrEmpty()][string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) { [void][System.IO.Directory]::CreateDirectory($Path) }
+    try {
+        [void][System.IO.Directory]::CreateDirectory($Path)
+    } catch {
+        $reason = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
+        throw "Could not create folder '$Path'. A file with the same name may already exist, or the location may not be writable. ($reason)"
+    }
 }
 
 $today     = (Get-Date).ToString('yyyy-MM-dd')

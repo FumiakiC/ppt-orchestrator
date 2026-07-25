@@ -24,6 +24,14 @@ try {
     New-DirectoryIfMissing -Path $bracketDir
     Assert-True ([System.IO.Directory]::Exists($bracketDir)) 'New-DirectoryIfMissing: idempotent for existing directory'
 
+    $occupied = Join-Path $root 'occupied'
+    [System.IO.File]::WriteAllText($occupied, 'x')
+    $threw = $false
+    $errMsg = ''
+    try { New-DirectoryIfMissing -Path $occupied } catch { $threw = $true; $errMsg = $_.Exception.Message }
+    Assert-True $threw 'New-DirectoryIfMissing: fails fast when a file occupies the path'
+    Assert-True ($errMsg -like "*$occupied*") 'New-DirectoryIfMissing: error message names the offending path'
+
     $nestedDir = Join-Path (Join-Path $root 'a') 'b'
     New-DirectoryIfMissing -Path $nestedDir
     Assert-True ([System.IO.Directory]::Exists($nestedDir)) 'New-DirectoryIfMissing: creates intermediate directories'
