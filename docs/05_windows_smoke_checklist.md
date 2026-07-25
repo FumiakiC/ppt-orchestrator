@@ -64,6 +64,7 @@ PR 本文にはこの表から**該当項目だけ**を抜き出して貼り、�
 | 16 | 終了時 cleanup | PowerPoint / listener / URLACL / Firewall rule がすべて片付く | ☐ |
 | 17 | 巻き込み防止 | **事前に手動で開いておいた別の PowerPoint を kill しない**（JobObject の道連れ kill が自分の起動分のみ） | ☐ |
 | 18 | ログ | token / Cookie が Console・ログに出ない。⚠ PIN の Console 表示は仕様（運用者が参照） | ☐ |
+| 19 | 角括弧フォルダ | 対象フォルダ名が `aa[1]`（**ASCII 角括弧**）でも起動でき、デッキが列挙され、`aa[1]\finish\` が作成される。全角 `「」【】［］` は PowerShell のワイルドカードではないため代用不可（PR-K / `v1.1.46`） | ☐ |
 
 ## 5. 記録の残し方
 
