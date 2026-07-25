@@ -1,7 +1,8 @@
 ﻿param(
+    [ValidateNotNullOrEmpty()]
     [string]$TargetFolderPath = $(
         $cwd = $ExecutionContext.SessionState.Path.CurrentFileSystemLocation.Path
-        if (Get-ChildItem -Path $cwd -Filter '*.pptx' -File -ErrorAction SilentlyContinue | Select-Object -First 1) {
+        if (Get-ChildItem -LiteralPath $cwd -Filter '*.pptx' -File -ErrorAction SilentlyContinue | Select-Object -First 1) {
             $cwd
         } elseif ($PSScriptRoot) {
             Split-Path $PSScriptRoot -Parent
@@ -11,6 +12,7 @@
     ),
     [string]$FinishFolderName = "finish",
     [int]$WebPort = 8090,
+    [ValidateNotNullOrEmpty()]
     [string]$StatePath = (Join-Path $env:ProgramData 'ppt-orchestrator\session.json'),
     [switch]$KillStalePowerPoint
 )
@@ -210,6 +212,26 @@ function Protect-StateAcl {
     }
 }
 
+function New-DirectoryIfMissing {
+    # Defined here (not utils.ps1) because config.ps1 is concatenated first and its
+    # top-level state block below calls this at load time, before utils.ps1 exists.
+    # New-Item has no -LiteralPath, so bracketed paths would be treated as wildcards.
+    # .NET CreateDirectory is literal, idempotent, and creates intermediate directories.
+    # Called unconditionally on purpose: a Test-Path guard would be a TOCTOU race, and it
+    # also reports True for an existing *file*, which would silently skip creation and
+    # defer the failure to a later, vaguer error. CreateDirectory fails here instead.
+    # The raw .NET message ('The file ... already exists.') does not say a folder was being
+    # created, so it is rethrown with context. Rethrow (not Write-Error + exit) is required:
+    # the state-file caller catches this and degrades to a warning instead of aborting.
+    param([ValidateNotNullOrEmpty()][string]$Path)
+    try {
+        [void][System.IO.Directory]::CreateDirectory($Path)
+    } catch {
+        $reason = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
+        throw "Could not create folder '$Path'. A file with the same name may already exist, or the location may not be writable. ($reason)"
+    }
+}
+
 $today     = (Get-Date).ToString('yyyy-MM-dd')
 $loadedPin = $null
 $loadedTok = $null
@@ -235,7 +257,7 @@ if ($loadedPin -and $loadedTok) {
     $script:SessionToken = [guid]::NewGuid().ToString('N')
     try {
         $dir = Split-Path -Parent $StatePath
-        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        New-DirectoryIfMissing -Path $dir
 
         $isDefaultDir = ($dir -eq (Join-Path $env:ProgramData 'ppt-orchestrator'))
         if (-not $isDefaultDir) {

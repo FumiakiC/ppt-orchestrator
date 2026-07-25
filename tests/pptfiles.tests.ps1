@@ -45,3 +45,19 @@ try {
 } finally {
     Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# --- 角括弧を含むフォルダ名はリテラルパスとして扱えること ---
+$bracketDir = Join-Path ([System.IO.Path]::GetTempPath()) ("ppttest_[1]_" + [System.IO.Path]::GetRandomFileName())
+[void][System.IO.Directory]::CreateDirectory($bracketDir)
+
+try {
+    [System.IO.File]::WriteAllText((Join-Path $bracketDir 'deck.pptx'), '')
+    [System.IO.File]::WriteAllText((Join-Path $bracketDir 'memo.txt'), '')
+
+    $r = @(Get-PptFiles -Path $bracketDir)
+
+    Assert-Equal 1 $r.Count 'Get-PptFiles: bracket directory returns one PPT file'
+    Assert-True  ($r.Name -contains 'deck.pptx') 'Get-PptFiles: bracket directory includes deck.pptx'
+} finally {
+    Remove-Item -LiteralPath $bracketDir -Recurse -Force -ErrorAction SilentlyContinue
+}

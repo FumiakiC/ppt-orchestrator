@@ -37,9 +37,9 @@ try {
     # Non-fatal: some hosts (e.g. redirected output) don't support resizing.
 }
 
-if (-not (Test-Path $TargetFolderPath)) { Write-Error "Target Folder Not Found"; exit }
+if (-not (Test-Path -LiteralPath $TargetFolderPath)) { Write-Error "Target Folder Not Found"; exit }
 $finishFolderPath = Join-Path $TargetFolderPath $FinishFolderName
-if (-not (Test-Path $finishFolderPath)) { New-Item -Path $finishFolderPath -ItemType Directory | Out-Null }
+New-DirectoryIfMissing -Path $finishFolderPath
 
 Write-Host "Starting PowerPoint..." -ForegroundColor Cyan
 

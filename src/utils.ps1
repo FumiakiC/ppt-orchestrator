@@ -48,7 +48,7 @@ function Release-ComObject {
 
 function Get-PptFiles {
     param([string]$Path)
-    return Get-ChildItem -Path $Path -File | Where-Object { $_.Extension -in @('.ppt', '.pptx') -and $_.Name -notlike '~$*' } | Sort-Object Name
+    return Get-ChildItem -LiteralPath $Path -File | Where-Object { $_.Extension -in @('.ppt', '.pptx') -and $_.Name -notlike '~$*' } | Sort-Object Name
 }
 
 function Resolve-FinishDestination {
