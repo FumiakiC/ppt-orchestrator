@@ -1,7 +1,8 @@
 ﻿param(
+    [ValidateNotNullOrEmpty()]
     [string]$TargetFolderPath = $(
         $cwd = $ExecutionContext.SessionState.Path.CurrentFileSystemLocation.Path
-        if (Get-ChildItem -Path $cwd -Filter '*.pptx' -File -ErrorAction SilentlyContinue | Select-Object -First 1) {
+        if (Get-ChildItem -LiteralPath $cwd -Filter '*.pptx' -File -ErrorAction SilentlyContinue | Select-Object -First 1) {
             $cwd
         } elseif ($PSScriptRoot) {
             Split-Path $PSScriptRoot -Parent
@@ -11,6 +12,7 @@
     ),
     [string]$FinishFolderName = "finish",
     [int]$WebPort = 8090,
+    [ValidateNotNullOrEmpty()]
     [string]$StatePath = (Join-Path $env:ProgramData 'ppt-orchestrator\session.json'),
     [switch]$KillStalePowerPoint
 )
@@ -210,6 +212,15 @@ function Protect-StateAcl {
     }
 }
 
+function New-DirectoryIfMissing {
+    # Defined here (not utils.ps1) because config.ps1 is concatenated first and its
+    # top-level state block below calls this at load time, before utils.ps1 exists.
+    # New-Item has no -LiteralPath, so bracketed paths would be treated as wildcards.
+    # .NET CreateDirectory is literal, idempotent, and creates intermediate directories.
+    param([ValidateNotNullOrEmpty()][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { [void][System.IO.Directory]::CreateDirectory($Path) }
+}
+
 $today     = (Get-Date).ToString('yyyy-MM-dd')
 $loadedPin = $null
 $loadedTok = $null
@@ -235,7 +246,7 @@ if ($loadedPin -and $loadedTok) {
     $script:SessionToken = [guid]::NewGuid().ToString('N')
     try {
         $dir = Split-Path -Parent $StatePath
-        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        New-DirectoryIfMissing -Path $dir
 
         $isDefaultDir = ($dir -eq (Join-Path $env:ProgramData 'ppt-orchestrator'))
         if (-not $isDefaultDir) {
