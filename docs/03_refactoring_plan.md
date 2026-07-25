@@ -98,6 +98,20 @@ Reviewed by: Claude（全指摘をソースコードと静的突合済み）
 > - `Resolve-Route` は不変で、テスト基準値は `PASS 80 / FAIL 0 / PENDING 0` のまま。ループ内の応答コードは CI で単体化できないため、Windows 実機のブラウザスモーク（各アクション後の URL が `/`・リロード安全性・他端末の `stopping` 追従・直打ちの正規化・NowPlaying 側の非対称解消・未認証フロー不変・Pages モックアップの遷移）で担保した。
 > - GET / POST 以外のメソッドの扱いが変わった。末尾の状態分岐から `$req.HttpMethod -eq "GET"` 条件を外したため、HEAD 等が `ShuttingDown` 中に Exit HTML を受け取るようになる（従来は Lobby HTML）。ブラウザが通らない経路であり実害はないが、挙動差として記録する。
 > - 改訂 11 が「次にモックアップへ触れる PR で追従する」とした残課題は**未消化**である。PR-N は `build/build-mockup.ps1` に触れた（PollingScript の同期）が、注入処理のコメントに `__MOCK_SCENARIO` が漏れている件は直していない。引き続き、次にモックアップへ触れる PR で追従する。
+>
+> **改訂 13（2026-07-25）**: PR-K（#51）が main に squash merge され、`v1.1.46` として自動リリースされた。パス系 API を `-LiteralPath` / .NET 直呼びへ統一した。主な点:
+> - 改訂 8 で PR-F から分離した作業 7 を完了した。角括弧 `[` `]` は PowerShell のワイルドカード文字であるため、`-Path` では実在するフォルダを取り違える。`main.ps1` の対象フォルダ存在確認、`config.ps1` の `$TargetFolderPath` 既定値算出（`-Filter` は維持）、`utils.ps1` の `Get-PptFiles` を `-LiteralPath` に統一した。
+> - **スコープは計画書記載の 2 箇所から拡張した**（owner 判断）。`main.ps1:40/42` だけでは角括弧フォルダでデッキ列挙（`Get-PptFiles`）が壊れたままで「半分だけ直る」ため、`utils.ps1` と `config.ps1` の該当箇所も同 PR に含めた。
+> - `New-Item` は `-LiteralPath` を持たない。改訂 8 が警告した `[WildcardPattern]::Escape()` の流用は**採用しなかった**（PR-F でファイル名破損を実測済み）。代替として `[System.IO.Directory]::CreateDirectory` を使う `New-DirectoryIfMissing` を新設し、`New-Item -ItemType Directory` を全廃した。リテラル・冪等・中間ディレクトリ生成（`-Force` 相当）を満たす。
+> - **ヘルパの定義位置は `utils.ps1` ではなく `config.ps1`**。`config.ps1` はビルド結合順の先頭であり、そのトップレベル状態ブロックが**ロード時に**本関数を呼ぶため、後続ファイルに置くと未定義参照になる。責務表（§4.1）から見れば `utils.ps1` が自然だが、結合順の制約が優先する。理由は関数コメントに明記した。
+> - `$TargetFolderPath` / `$StatePath` に `[ValidateNotNullOrEmpty()]` を付与した（改訂 8 の推奨どおり。挙動は実質不変）。
+> - **ボットレビュー指摘を採用し、`Test-Path` 事前ガードを撤去した**。`Test-Path` は同名の *ファイル* に対しても `True` を返すため、ディレクトリ作成を黙ってスキップし、`Directory.Exists()` が `False` のまま後段へ進んで finish 移動時に曖昧に失敗していた。存在確認と作成の間の TOCTOU 窓も生じていた。`CreateDirectory` は既存ディレクトリに冪等なので、無条件に呼べば両方が解消し、不正状態はその場で顕在化する。`-PathType Container` での事前チェック復活は、TOCTOU が残り判定が二重化するため採用しない。
+> - **挙動変更**: 対象フォルダ内に `finish` という名の**ファイル**（拡張子なし）が存在する場合、従来は無言でスキップして後段で曖昧に失敗していたが、今後は起動時に即座に失敗する。生の .NET 例外は「フォルダ作成中だった」ことを示さないため、ヘルパ内 1 箇所で文脈を付けて `throw` し直す。`Write-Error` + `exit` にしないのは、`config.ps1` 側の呼び出しがこの例外を catch して「状態ファイル保存失敗」の警告に降格し**起動を継続する**設計を壊さないため。`$_.Exception.InnerException` を使い `Exception calling ... with "1" argument(s)` のラッパー文言を除いている。
+> - **微小な挙動差**: `-StatePath` にディレクトリ部を持たないベース名（例 `-StatePath 'session.json'`）を渡すと `Split-Path -Parent` が空文字を返す。変更前は `New-Item -Path ''` が、変更後は `[ValidateNotNullOrEmpty()]` が、いずれも `ParameterBindingValidationException` を投げ、同一の `try/catch` に捕捉されて同じ警告に落ちる。観測可能な挙動は同一で、警告に埋め込まれる例外メッセージの文言のみ変わる。
+> - テスト基準値は `PASS 80 / FAIL 0 / PENDING 0` → **`PASS 88 / FAIL 0 / PENDING 0`**（`tests/newdir.tests.ps1` 新規 6 件：角括弧のリテラル生成 / ワイルドカード非展開 / 冪等 / 中間ディレクトリ生成 / ファイル占有時の即時失敗 / エラーメッセージへのパス包含。`tests/pptfiles.tests.ps1` に角括弧フォルダ列挙 2 件）。実装前コミット時点で新規テストが赤くなること（`newdir` はファイル単位 1 件、`pptfiles` は個別 2 件）を確認したうえで実装した。
+> - **実機スモークの知見（重要）**: 第 1 回のスモークを `\\Mac\Home\Downloads\aa「あいうえお」】` で実施したが、**全角括弧 `「」【】［］` は PowerShell のワイルドカード文字ではない**（`[WildcardPattern]::ContainsWildcardCharacters()` が `False`）ため、本 PR の対象バグを踏んでいなかった。角括弧まわりの検証では必ず **ASCII の `[` `]`** を使うこと。UNC（Parallels 共有フォルダ）上で `[System.IO.Directory]::CreateDirectory` が動作することの確認としては有効だったため記録する。ASCII 角括弧での起動・列挙・`finish/` 作成、および `Test-Path` ガード撤去後の再スモーク（finish 既存の状態で 2 回起動）も実施済み。
+> - 副次的に、既存の冪等テストが実質的に意味を持つようになった。従来は `Test-Path` が短絡して 2 回目の `CreateDirectory` が呼ばれておらず、検証していたのは「ガードがスキップすること」だった。
+> - **ドリフト解消**: §8 の「finish file lock race」が PR-F（#41 / `v1.1.35`）で `RetryDelaysMs` backoff retry として完了済みにもかかわらず未完了表記のままだったため、完了に更新した。§4.1 の `config.ps1` 責務にディレクトリ作成ヘルパを追記した。
 
 ---
 
@@ -226,7 +240,7 @@ flowchart LR
 | `build/build.ps1` | `src/*.ps1` 結合、`src/frontend/**` の `%%BUILD_*%%` トークン注入、`dist/` 生成 |
 | `build/build-mockup.ps1` | **CI 限定**。`src/frontend/**` から静的 UI モックアップ（`dist/pages/`）を生成。実行時の組み立てを模倣し、demo shim を `</head>` 直前に注入する。あわせてページ識別子を `window.__MOCK_PAGE` として注入し、デモ値と筋書き（PIN / サンプルデッキ / 直リンク時の初期シナリオ）の**唯一の定義元**として `window.__MOCK_PIN` / `__MOCK_DECKS` / `__MOCK_SCENARIO` を注入する。製品 `dist` には非同梱 |
 | `build/mockup/demo-shim.js` | **CI 限定**。Pages 専用の疑似バックエンド。`fetch` と form 送信を横取りし `/status` / `/slide/*` / `/lock/*` を模擬する。製品 JS は無改変のまま実走させる。値は持たず注入値のみを参照し、Lobby 起点を前提にせずページ入場時に不足状態を reconcile する（直リンク対応）。`sessionStorage` は自分が作ったキー（`mock_state` / `mock_net`）のみを管理する |
-| `config.ps1` | パラメータ、Win32 `Add-Type`、PIN/Token 生成、状態ファイル保存、ACL hardening |
+| `config.ps1` | パラメータ、Win32 `Add-Type`、PIN/Token 生成、状態ファイル保存、ACL hardening、ディレクトリ作成ヘルパ（`New-DirectoryIfMissing`。汎用ユーティリティだが、結合順の先頭にある本ファイルのトップレベル処理がロード時に呼ぶため `utils.ps1` に置けない。改訂 13 / PR-K） |
 | `templates.ps1` | ビルド時トークンを含む HTML テンプレート保持 |
 | `utils.ps1` | IP 列挙、PPT ファイル列挙、finish 移動、HTTP 応答、body 読み取り、cid/PIN 抽出 |
 | `auth.ps1` | Cookie 認証、PIN 認証、失敗時 throttle |
@@ -358,11 +372,11 @@ flowchart LR
 | UPN 抽出 | **✅ 完了（PR-B / #32 / `v1.1.25`）**。**機序確認済み（改訂 1）**: `whoami /upn` は UPN 文字列（例 `user@domain.com`）のみを出力し `:` を含まないため、`find ":"` は**常に不一致**となり `CURRENT_UPN` は決して設定されない（= 100% fallback）。仮に一致しても `delims=:` の `%%B` 抽出で値が壊れる二重の欠陥。`find` を外し `whoami /upn` の出力を直接取得する形に修正する。URLACL 登録ユーザーの正確性に影響する。PR-B では `whoami /upn` の出力を直接取得し、`"@"` を含む場合のみ UPN として採用する形に修正した。`"@"` の判定はバッチの変数置換（`if "%CURRENT_UPN%"=="%CURRENT_UPN:@=%"`）で行い外部プロセスを使わない。失敗時の fallback 先は `%USERDOMAIN%\%USERNAME%` のまま不変。Console には `[URLACL] User: <登録ユーザー>` を表示する 1 行を追加した。`tests/launcher.tests.ps1` で `.bat` の内容ベース回帰ガードを追加した。これによりドメイン / Entra 参加機では URLACL 登録ユーザーが `DOMAIN\USER` から UPN に変わる挙動変更が入る。 | P1 |
 | src エンコーディング不統一 | **✅ 完了（chore PR / #29 / `v1.1.22`）**。**事実修正（改訂 3）**: BOM なし UTF-8 + LF だったのは `com-handler.ps1` / `ui-console.ps1` / **`templates.ps1`** の 3 ファイル（改訂 1 の「2 ファイル」は誤り）。他の `src/*.ps1` は BOM 付き UTF-8 + CRLF。`build.ps1` が `-Encoding UTF8` で読み BOM 付きで `dist` を書くため**製品配布物は無害**だったが、Windows PowerShell 5.1 で `src` を直接実行すると BOM なしファイルは ANSI 解釈され日本語が化ける問題があった。`.gitattributes` / `.editorconfig` を追加し、全 `*.ps1`（src / build / tests）を BOM 付き UTF-8 + CRLF に統一して解消。 | P2 |
 | finish 同名上書き | **✅ 完了（PR-F / #41 / `v1.1.35`）**。`Move-Item -Force` を廃止し、同名 collision は既存を残して timestamp 名へ退避（`Resolve-FinishDestination`）。`-Force` なしのため race でも上書きせず安全に失敗する。 | P1 |
-| finish file lock race | PowerPoint close 直後の move は file lock 解放前に失敗し得る。短い retry + backoff を追加する。 | P1 |
+| finish file lock race | **✅ 完了（PR-F / #41 / `v1.1.35`）**。`RetryDelaysMs` による短い backoff retry を実装済み。実機スモーク項目 13 で担保する。 | P1 |
 | 永続ログ | 重要イベントが `Write-Host` のみで事後解析できない。Zero-Dependency の追記専用ログを導入する。 | P1〜P2 |
 | port 二重定義 | `.bat` の `WEB_PORT` と `config.ps1` の `$WebPort` が二重定義。単一ソース化を検討する。 | P2 |
 | IP 表示 | `Get-LocalActiveIPs` の vendor 名除外は想定外 adapter に弱い。運用表示の改善余地がある。 | P2 |
-| パス系 API の `-LiteralPath` 不統一 | **新規（改訂 3）**: `src` 全体で `-LiteralPath` は 11 箇所（`config.ps1` 9: `Test-Path` 4 / `Set-Acl` 2 / `Get-Content` 1 / `Remove-Item` 1 / `Set-Content` 1、`utils.ps1` 2: `Test-Path` / `Move-Item`）使われているのに対し、`main.ps1:40` と `main.ps1:42` の `Test-Path` のみ `-LiteralPath` を欠く。角括弧 `[` `]` を含むフォルダ名がワイルドカードとして解釈され、実在するフォルダを「Target Folder Not Found」と誤判定し得る。`main.ps1:42` の `New-Item` は `-LiteralPath` を持たないため `[WildcardPattern]::Escape()` 等で対処する必要がある。#29 の Gemini レビューで検出し、#30 のレビューで箇所数を訂正。 | P1 |
+| パス系 API の `-LiteralPath` 不統一 | **✅ 完了（PR-K / #51 / `v1.1.46`）**。`main.ps1` の `Test-Path` 2 箇所に加え、`utils.ps1` の `Get-PptFiles` と `config.ps1` の既定値算出も `-LiteralPath` 化し（owner 判断でスコープ拡張）、`New-Item -ItemType Directory` は `New-DirectoryIfMissing`（`[System.IO.Directory]::CreateDirectory`）へ全廃した。`[WildcardPattern]::Escape()` は PR-F の破損実測により不採用。以下は修正前の記録: `src` 全体で `-LiteralPath` は 11 箇所（`config.ps1` 9: `Test-Path` 4 / `Set-Acl` 2 / `Get-Content` 1 / `Remove-Item` 1 / `Set-Content` 1、`utils.ps1` 2: `Test-Path` / `Move-Item`）使われているのに対し、`main.ps1:40` と `main.ps1:42` の `Test-Path` のみ `-LiteralPath` を欠く。角括弧 `[` `]` を含むフォルダ名がワイルドカードとして解釈され、実在するフォルダを「Target Folder Not Found」と誤判定し得る。`main.ps1:42` の `New-Item` は `-LiteralPath` を持たないため `[WildcardPattern]::Escape()` 等で対処する必要がある。#29 の Gemini レビューで検出し、#30 のレビューで箇所数を訂正。 | P1 |
 
 ---
 
@@ -567,7 +581,9 @@ Phase 0 は、作業 6（ログ方針 / security header 方針 / token 方針の
 
 優先度: P1
 
-> **完了記録（改訂 8）**: 作業 1〜6 を PR-F（#41 / `v1.1.35`）で完了。`Move-Item -Force` 廃止 + `Resolve-FinishDestination` 抽出（timestamp 退避）+ `RetryDelaysMs` backoff retry + `tests/finish.tests.ps1`。テスト基準値は `PASS 80 / FAIL 0 / PENDING 0`。実機スモーク（`docs/05` 項目 12・13）で finish 同名非上書き・角括弧リテラル移動・file lock retry を確認する。作業 7 は PR-K に分離（未着手）。
+> **完了記録（改訂 8）**: 作業 1〜6 を PR-F（#41 / `v1.1.35`）で完了。`Move-Item -Force` 廃止 + `Resolve-FinishDestination` 抽出（timestamp 退避）+ `RetryDelaysMs` backoff retry + `tests/finish.tests.ps1`。テスト基準値は `PASS 80 / FAIL 0 / PENDING 0`。実機スモーク（`docs/05` 項目 12・13）で finish 同名非上書き・角括弧リテラル移動・file lock retry を確認する。作業 7 は PR-K に分離。
+>
+> **完了記録（改訂 13）**: 作業 7 を PR-K（#51 / `v1.1.46`）で完了。`New-DirectoryIfMissing` 新設 + `New-Item -ItemType Directory` 全廃 + `-LiteralPath` 統一（owner 判断で `utils.ps1` / `config.ps1` へスコープ拡張）+ `[ValidateNotNullOrEmpty()]` 付与。`[WildcardPattern]::Escape()` は不採用。テスト基準値は `PASS 88 / FAIL 0 / PENDING 0`。実機スモークは ASCII 角括弧フォルダで実施（全角括弧はワイルドカードではないため無効な検証になる点に注意）。
 
 ---
 
@@ -659,7 +675,7 @@ Phase 0 は、作業 6（ログ方針 / security header 方針 / token 方針の
 | PR-D | 未認証 `/auth` 修正。✅ 完了（#37 / `v1.1.31`） | tests, build, browser auth smoke |
 | PR-E | `/stop` = 緊急停止（認証済み全端末・lock 非依存）を仕様確定 + drift 防止コメント。案B 採用で挙動不変・UI 追従なし。✅ 完了（#39 / `v1.1.32`） | tests, build（挙動不変のため実機スモークは不要ゲート） |
 | PR-F | finish 同名上書き回避（timestamp 退避）+ lock retry + tests。✅ 完了（#41 / `v1.1.35`） | tests, build, Windows file move smoke |
-| PR-K | パス系 API の `-LiteralPath` 統一 + 空値バリデーション判断（characterization test 先行） | tests, build, Windows path smoke |
+| PR-K | パス系 API の `-LiteralPath` 統一 + `New-DirectoryIfMissing` 新設 + 空値バリデーション。✅ 完了（#51 / `v1.1.46`） | tests, build, Windows path smoke |
 | PR-G | 追記専用ログ + catch 棚卸し | tests, build, manual log review |
 | PR-H | `Watch-RunningPresentation` helper 抽出 1 | tests, build, full PowerPoint smoke |
 | PR-I | Console loop/view model 分割 | tests, build, Windows console smoke |
@@ -696,6 +712,7 @@ COM / Listener / Console / `.bat` に触れる PR では最低限以下を確認
 16. 終了時に PowerPoint、listener、URLACL、Firewall rule が cleanup される。
 17. 既存の operator PowerPoint を誤って kill しない。
 18. token / Cookie がログ・Console に出ない。⚠ PIN の Console 表示は仕様であり、`ui-console.ps1` が `$script:AuthPin` を表示し、運用者はそこから読む。PIN は本項目の秘匿対象に含めない。
+19. 角括弧 `[` `]` を含む対象フォルダ名（例 `aa[1]`）で起動できる。「Target Folder Not Found」で落ちず、ロビーにデッキが列挙され、`aa[1]\finish\` が作成される（`aa1\finish` 等ができない）。**必ず ASCII の角括弧を使う**（全角 `「」【】［］` はワイルドカードではないため検証にならない）。改訂 13 / PR-K。
 
 ---
 
