@@ -39,8 +39,11 @@ function Invoke-WebRequestProcessor {
         return @{ ShouldContinue = $true; ResultAction = $ResultAction; ResultFile = $null; ActionSetTime = $null; ShuttingDown = $ShuttingDown; ShutdownDeadline = $ShutdownDeadline }
     }
 
-    # --- 認証済み GET /auth → / へリダイレクト ---
-    if ($isAuthenticated -and $url -eq "/auth" -and $req.HttpMethod -eq "GET") {
+    # --- GET 正規化 ---
+    # URLバーを常に / に固定する。/status 以外のすべてのGETパス
+    # （/auth・/exit の旧特例を含む）は 302 で / へ戻す。
+    # 未認証は先頭の認証ミドルウェアが AuthView を返すため、ここへは認証済みのみ到達する。
+    if ($req.HttpMethod -eq "GET" -and $url -ne "/" -and $url -ne "/status") {
         try {
             $res.StatusCode = 302
             $res.KeepAlive  = $false
@@ -73,59 +76,55 @@ function Invoke-WebRequestProcessor {
     }
 
     # --- POST アクション ---
+    # Processing HTML を 200 で直接返すと URL バーがアクションパスのまま残り、
+    # その画面のリロードが POST 再送信（アクション二重発火）になり得るため、
+    # 常に 303 で / へ戻し、状態に応じた画面は GET / 側の分岐に委ねる。
+    # 依存: リダイレクト先の GET / が Processing を受け取れるのは、ui-console.ps1 の
+    # 「アクション確定後 800ms はループを抜けない」猶予の内に届くため。猶予を縮めないこと。
     if ($req.HttpMethod -eq "POST") {
         switch ($url) {
-            "/start"  { $newResultAction = "Start"; $newActionSetTime = Get-Date; $resHtml = $ProcessingHtml }
-            "/next"   { $newResultAction = "Next";  $newActionSetTime = Get-Date; $resHtml = $ProcessingHtml }
-            "/retry"  { $newResultAction = "Retry"; $newActionSetTime = Get-Date; $resHtml = $ProcessingHtml }
-            "/lobby"  { $newResultAction = "Lobby"; $newActionSetTime = Get-Date; $resHtml = $ProcessingHtml }
+            "/start"  { $newResultAction = "Start"; $newActionSetTime = Get-Date }
+            "/next"   { $newResultAction = "Next";  $newActionSetTime = Get-Date }
+            "/retry"  { $newResultAction = "Retry"; $newActionSetTime = Get-Date }
+            "/lobby"  { $newResultAction = "Lobby"; $newActionSetTime = Get-Date }
             "/exit"   {
                 $now = Get-Date
-                try {
-                    $res.StatusCode = 303
-                    $res.KeepAlive  = $false
-                    $res.AddHeader("Location", "/exit")
-                    $res.Close()
-                } catch {}
-                $script:ContextTask = Get-SafeContextAsync -Listener $Listener
-                return @{
-                    ShouldContinue   = $false
-                    ResultAction     = "Exit"
-                    ResultFile       = $null
-                    ActionSetTime    = $now
-                    ShuttingDown     = $true
-                    ShutdownDeadline = $now.AddSeconds(5)
-                }
+                $newResultAction = "Exit"
+                $newActionSetTime = $now
+                $newShuttingDown = $true
+                $newShutdownDeadline = $now.AddSeconds(5)
             }
             "/select" {
                 if ([System.Web.HttpUtility]::UrlDecode($body) -match "filename=(.*)") {
                     $newResultAction = "Select"; $newResultFile = $matches[1]; $newActionSetTime = Get-Date
                 }
-                $resHtml = $ProcessingHtml
             }
         }
-    } elseif ($url -eq "/exit") {
-        if ($ShuttingDown) {
-            $resHtml = $ExitHtml
-        } else {
-            try {
-                $res.StatusCode = 302
-                $res.KeepAlive  = $false
-                $res.AddHeader("Location", "/")
-                $res.Close()
-            } catch {}
-            $script:ContextTask = Get-SafeContextAsync -Listener $Listener
-            return @{ ShouldContinue = $false; ResultAction = $ResultAction; ResultFile = $null; ActionSetTime = $null; ShuttingDown = $ShuttingDown; ShutdownDeadline = $ShutdownDeadline }
+
+        try {
+            $res.StatusCode = 303
+            $res.KeepAlive  = $false
+            $res.AddHeader("Location", "/")
+            $res.Close()
+        } catch {}
+        $script:ContextTask = Get-SafeContextAsync -Listener $Listener
+        return @{
+            ShouldContinue   = $false
+            ResultAction     = $newResultAction
+            ResultFile       = $newResultFile
+            ActionSetTime    = $newActionSetTime
+            ShuttingDown     = $newShuttingDown
+            ShutdownDeadline = $newShutdownDeadline
         }
     }
 
-    # --- 状態変化中のGETにはprocessing/exit画面を返す（他端末操作時のチカチカ防止） ---
-    if ($req.HttpMethod -eq "GET" -and $url -ne "/status" -and $url -ne "/exit") {
-        if ($ShuttingDown) {
-            $resHtml = $ExitHtml
-        } elseif ($ResultAction -ne $null) {
-            $resHtml = $ProcessingHtml
-        }
+    # --- GET / の状態表示 ---
+    # ここへ到達するのは GET / のみ（/status・POST・他パス GET は上で応答済み）。
+    # 他端末操作時のチカチカ防止のため、状態変化中は本体でなく Processing を返す。
+    if ($ShuttingDown) {
+        $resHtml = $ExitHtml
+    } elseif ($ResultAction -ne $null) {
+        $resHtml = $ProcessingHtml
     }
 
     Send-HttpResponse -Response $res -Content $resHtml

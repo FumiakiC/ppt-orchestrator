@@ -25,7 +25,7 @@
     # Polling call-site for Lobby/Dialog pages (startPolling function is defined in HtmlHeader).
     PollingScript = @'
     <script>
-        window.startPolling(['waiting'], '/', { defaultDelay: 300, statusRedirects: { 'stopping': '/exit' } });
+        window.startPolling(['waiting'], '/', { defaultDelay: 300 });
     </script>
 '@
 

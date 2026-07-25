@@ -250,7 +250,19 @@ function Watch-RunningPresentation {
                         $stopRequested = $true   # switch 内の break は while を抜けないため flag 経由
                     }
                     default {
-                        Send-HttpResponse -Response $res -Content $fullHtml
+                        # URL バーを常に / に固定する。認証済み GET /auth が Lobby ループと異なり
+                        # 302 しなかった旧非対称もこれで解消。
+                        if ($path -eq '/') {
+                            Send-HttpResponse -Response $res -Content $fullHtml
+                        } else {
+                            $code = if ($req.HttpMethod -eq 'POST') { 303 } else { 302 }
+                            try {
+                                $res.StatusCode = $code
+                                $res.KeepAlive  = $false
+                                $res.AddHeader("Location", "/")
+                                $res.Close()
+                            } catch {}
+                        }
                     }
                 }
 
