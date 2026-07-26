@@ -19,6 +19,7 @@ $eventsLogDir = Join-Path (Split-Path -Parent $StatePath) 'logs'
 Initialize-Log -Directory $eventsLogDir -Meta ([ordered]@{
     schema       = $script:LogSchema
     host         = $env:COMPUTERNAME
+    version      = '%%BUILD_VERSION%%'
     port         = $WebPort
     slideLogMode = $script:SlideLogMode
 })
@@ -55,7 +56,14 @@ try {
     # Non-fatal: some hosts (e.g. redirected output) don't support resizing.
 }
 
-if (-not (Test-Path -LiteralPath $TargetFolderPath)) { Write-Error "Target Folder Not Found"; exit }
+if (-not (Test-Path -LiteralPath $TargetFolderPath)) {
+    # $ErrorActionPreference='Stop' のため Write-Error はここで terminating になる。
+    # ログと Close-Log は必ず Write-Error より前に置く（後置だと到達しない）。
+    # これが無いと app.start だけ残って「app.stop 無し＝異常終了」に誤読される。
+    Write-Log -EventName 'app.stop' -Data ([ordered]@{ reason = 'no-target-folder' })
+    Close-Log
+    Write-Error "Target Folder Not Found"; exit
+}
 $finishFolderPath = Join-Path $TargetFolderPath $FinishFolderName
 New-DirectoryIfMissing -Path $finishFolderPath
 
@@ -89,6 +97,11 @@ if (-not $pptApp) {
 if (-not $pptApp) {
     $msg = if ($lastErr) { $lastErr.Exception.Message } else { "unknown error" }
     $hr  = if ($lastErr) { ("0x{0:X8}" -f $lastErr.Exception.HResult) } else { "n/a" }
+    # 計算済みの $hr / $msg を使い回す（COM 呼び出しは増やさない）。
+    # Write-Error は EAP=Stop で terminating になるため、ログと Close-Log を先に出す。
+    Write-Log -EventName 'ppt.launch.fail' -Level 'error' -Data ([ordered]@{ hr = $hr; msg = $msg })
+    Write-Log -EventName 'app.stop' -Data ([ordered]@{ reason = 'ppt-launch-failed' })
+    Close-Log
     if ((Get-Process -Name POWERPNT -ErrorAction SilentlyContinue) -and -not $KillStalePowerPoint) {
         Write-Error "Failed to start PowerPoint: $msg (HRESULT $hr). A PowerPoint process is already running; re-run with -KillStalePowerPoint to clear it, or close it manually."
     } else {
