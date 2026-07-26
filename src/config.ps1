@@ -14,6 +14,7 @@
     [int]$WebPort = 8090,
     [ValidateNotNullOrEmpty()]
     [string]$StatePath = (Join-Path $env:ProgramData 'ppt-orchestrator\session.json'),
+    [ValidateSet('change','all')][string]$SlideLogMode = 'change',
     [switch]$KillStalePowerPoint
 )
 
@@ -232,6 +233,118 @@ function New-DirectoryIfMissing {
     }
 }
 
+# --- Append-only NDJSON logging foundation ---
+# Defined here (not utils.ps1) because config.ps1 is concatenated first; keeping the
+# writer state and lifecycle functions together with New-DirectoryIfMissing (which
+# Open-LogFile depends on) avoids forward references at load time.
+# This block only *defines* the machinery; call sites across the app emit Write-Log events
+# to append NDJSON diagnostics (startup/auth/slide/lock/COM recovery, etc.).
+$script:LogSchema = 1                # bump when the NDJSON line shape changes
+$script:LogWriter = $null           # [System.IO.StreamWriter] or $null when closed
+$script:LogDir    = $null           # directory that holds the dated log files
+$script:LogDate   = $null           # 'yyyyMMdd' of the currently open file (rollover key)
+$script:LogSid    = $null           # session id stamped on every line ('<date>-<HHmmss>')
+$script:LogStart  = $null           # [datetime] baseline for the per-line elapsed (t) field
+$script:LogSeq    = 0               # monotonically increasing line counter (see Write-Log)
+$script:LogWarned = $false          # ensures the write-failure warning is emitted at most once
+$script:LogMeta   = $null           # log.meta payload replayed at the start of each opened file
+
+function Open-LogFile {
+    # (Re)opens the dated log file for append. Called by Initialize-Log and, on a date
+    # change, by Write-Log to perform day-boundary rollover. Closes any previous writer.
+    param([Parameter(Mandatory)][string]$Date)
+    Close-Log
+    New-DirectoryIfMissing -Path $script:LogDir
+    $path = Join-Path $script:LogDir ("events-{0}.jsonl" -f $Date)
+    # append=true: never truncate an existing day's file (multiple runs share one file).
+    # UTF8Encoding($false): NO BOM — a BOM in the middle of an append-only stream would
+    #   corrupt the line-delimited format, so it must be suppressed (unlike the .ps1 files).
+    # AutoFlush=true: each WriteLine reaches the OS immediately so a crash keeps prior
+    #   lines. This is a buffer flush, NOT a physical disk sync (Flush(true)); the latter
+    #   is deliberately avoided as unnecessary and costly for a diagnostic log.
+    $enc = New-Object System.Text.UTF8Encoding($false)
+    $sw  = New-Object System.IO.StreamWriter($path, $true, $enc)
+    $sw.AutoFlush = $true
+    $script:LogWriter = $sw
+    $script:LogDate   = $Date
+    if ($script:LogMeta) { Write-Log -EventName 'log.meta' -Data $script:LogMeta }
+}
+
+function Initialize-Log {
+    # Establishes session identity and opens today's file. Safe to call once at startup.
+    param(
+        [Parameter(Mandatory)][string]$Directory,
+        [System.Collections.IDictionary]$Meta
+    )
+    $now = Get-Date
+    $script:LogDir   = $Directory
+    $script:LogMeta  = $Meta
+    $script:LogStart = $now
+    $script:LogSid   = $now.ToString('yyyyMMdd-HHmmss')
+    $script:LogSeq   = 0
+    try {
+        Open-LogFile -Date $now.ToString('yyyyMMdd')
+    } catch {
+        $script:LogWriter = $null
+        Write-Host " [Warning] Logging is disabled for this run: $($_.Exception.Message)" -ForegroundColor Yellow
+        return
+    }
+}
+
+function Write-Log {
+    # Formats one NDJSON line via the pure Format-LogEvent and appends it.
+    param(
+        [Parameter(Mandatory)][string]$EventName,
+        [ValidateSet('info','warn','error')][string]$Level = 'info',
+        [string]$Cid,
+        [string]$Ip,
+        [System.Collections.IDictionary]$Data
+    )
+    if ($null -eq $script:LogWriter) { return }
+    $now = Get-Date
+    try {
+        # Day-boundary rollover: switch to the new dated file before writing. This is inside
+        # the logging catch so rollover/open failures are also diagnostic-only failures.
+        # Do this before taking the event seq because Open-LogFile intentionally emits its
+        # own log.meta line through Write-Log for the newly opened file.
+        $date = $now.ToString('yyyyMMdd')
+        if ($date -ne $script:LogDate) { Open-LogFile -Date $date }
+        # Increment BEFORE attempting the line write so a failed WriteLine leaves a *gap*
+        # in the seq sequence rather than silently reusing a number.
+        $script:LogSeq++
+        $seq = $script:LogSeq
+        $elapsed = [long]($now - $script:LogStart).TotalMilliseconds
+        $line = Format-LogEvent -Timestamp $now -ElapsedMs $elapsed -Sid $script:LogSid `
+            -Seq $seq -Level $Level -EventName $EventName -Cid $Cid -Ip $Ip -Data $Data
+        $script:LogWriter.WriteLine($line)
+    } catch {
+        # Intentional swallow: logging is a diagnostic side channel and must never break
+        # the presentation flow. There is deliberately no 'log.write.fail' event — if we
+        # cannot write, we cannot write that either. Warn once on the host (best effort)
+        # so the operator has a hint, then stay silent to avoid flooding the console.
+        # Disable logging for real: release the writer so later calls short-circuit on the
+        # null guard above. Keeping a broken writer would retry (and fail) on every event,
+        # contradicting the 'disabled' warning below and docs/06 §8 (which tells operators
+        # to use this warning to diagnose a log that stops mid-session).
+        Close-Log
+        if (-not $script:LogWarned) {
+            $script:LogWarned = $true
+            Write-Host " [Warning] Logging disabled after write failure: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+}
+
+function Close-Log {
+    # Flushes and releases the writer. Idempotent; safe to call when already closed.
+    # Keep this as resource release only: Open-LogFile also calls Close-Log during
+    # day-boundary rollover, so writing app.stop here would emit a false app.stop on
+    # every rollover. The real app.stop line belongs to the caller in a later change.
+    if ($null -ne $script:LogWriter) {
+        try { $script:LogWriter.Flush(); $script:LogWriter.Dispose() } catch { }
+        $script:LogWriter = $null
+    }
+}
+
 $today     = (Get-Date).ToString('yyyy-MM-dd')
 $loadedPin = $null
 $loadedTok = $null
@@ -276,3 +389,4 @@ if ($loadedPin -and $loadedTok) {
 }
 $script:AuthFailedTracker   = @{}
 $script:ContextTask         = $null
+$script:SlideLogMode        = $SlideLogMode

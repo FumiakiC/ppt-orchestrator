@@ -10,6 +10,10 @@
 . (Resolve-SrcFunction -Path "$PSScriptRoot/../src/utils.ps1" -Name 'Resolve-FinishDestination')
 . (Resolve-SrcFunction -Path "$PSScriptRoot/../src/utils.ps1" -Name 'Move-ToFinishIfPending')
 
+# 抽出した Move-ToFinishIfPending は Write-Log（config.ps1 定義）を呼ぶため、no-op スタブを
+# 与える（ログ副作用なしで移動ロジックだけを検証する）。末尾の finally で除去する。
+function Write-Log { param([string]$EventName, [string]$Level, [string]$Cid, [string]$Ip, [System.Collections.IDictionary]$Data) }
+
 $ts = [datetime]'2026-07-18T12:34:56'
 
 # --- Resolve-FinishDestination: 純粋関数 7 ケース ---
@@ -114,4 +118,5 @@ try {
     }
 } finally {
     Remove-Item -Path $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item Function:\Write-Log -Force -ErrorAction SilentlyContinue
 }

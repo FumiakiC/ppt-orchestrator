@@ -110,6 +110,9 @@ function Move-ToFinishIfPending {
         # Do not WildcardPattern::Escape here: -Destination receives a literal path, and escaping would corrupt file names like deck[1].pptx.
         $destinationPath = Join-Path -Path $FinishFolderPath -ChildPath $destinationName
     } catch {
+        # 帰結はリトライ全滅と同じ「元ファイル未移動」なので同じ file.finish.fail を使い、
+        # stage で「移動前の移動先解決段階で失敗した」ことを区別する。
+        Write-Log -EventName 'file.finish.fail' -Level 'error' -Data ([ordered]@{ msg = $_.Exception.Message; stage = 'resolve' })
         Write-Warning "Resolve finish destination failed: $($_.Exception.Message)"
         return $TargetFileItem
     }
@@ -117,16 +120,30 @@ function Move-ToFinishIfPending {
     Write-Host " >> Moving to finished folder..." -ForegroundColor Gray
     for ($attempt = 0; $attempt -le $delays.Count; $attempt++) {
         try {
-            if (-not (Test-Path -LiteralPath $sourcePath)) { return $TargetFileItem }
+            if (-not (Test-Path -LiteralPath $sourcePath)) {
+                # リトライ発行後にソースが消えた（他所で移動/削除された）場合は終端イベントを残す。
+                # file.finish.retry の後に ok / fail のどちらも無いとログ欠落に見えるため。
+                # attempt 0 での消失はループ前の冪等ガードと同じ扱い（記録しない）。
+                if ($attempt -gt 0) {
+                    Write-Log -EventName 'file.finish.fail' -Level 'error' -Data ([ordered]@{ msg = 'source-missing' })
+                }
+                return $TargetFileItem
+            }
 
-            return Move-Item -LiteralPath $sourcePath -Destination $destinationPath -PassThru -ErrorAction Stop
+            $moved = Move-Item -LiteralPath $sourcePath -Destination $destinationPath -PassThru -ErrorAction Stop
+            # renamed = 同名衝突でタイムスタンプ名になったか（Resolve-FinishDestination の結果を使い回す）。
+            Write-Log -EventName 'file.finish.ok' -Data ([ordered]@{ dest = $destinationName; renamed = ($destinationName -ne $sourceFileName) })
+            return $moved
         } catch {
             if ($attempt -ge $delays.Count) {
+                Write-Log -EventName 'file.finish.fail' -Level 'error' -Data ([ordered]@{ msg = $_.Exception.Message })
                 Write-Warning "Move failed: $($_.Exception.Message)"
                 return $TargetFileItem
             }
 
             $delay = [int]$delays[$attempt]
+            # attempt は 1 始まりで記録する（辞書 §4.6：200/400/800ms の 3 回）。
+            Write-Log -EventName 'file.finish.retry' -Level 'warn' -Data ([ordered]@{ attempt = ($attempt + 1); delayMs = $delay })
             if ($delay -gt 0) { Start-Sleep -Milliseconds $delay }
         }
     }
@@ -220,6 +237,51 @@ function Read-RequestBody {
     } finally {
         if ($null -ne $sr) { $sr.Dispose() }
     }
+}
+
+function Format-LogEvent {
+    # 1本の NDJSON 行（文字列）を組み立てる純粋関数。COM / HttpListener / ファイル IO に触れない。
+    # Resolve-Route / Resolve-FinishDestination の [pscustomobject] 返却パターンは踏襲せず、
+    # ここでは ConvertTo-Json -Compress で必ず「1行の文字列」を返す（呼び出し側 Write-Log が
+    # そのまま WriteLine するため）。
+    #   - $Timestamp に既定値は付けない: 付けると引数省略時に内部で時刻を取得することになり
+    #     純粋関数でなくなる。呼び出し側（Write-Log）が必ず値を渡す。
+    #   - $EventName は $Event（PowerShell 自動変数）と衝突するため使用不可。
+    #   - $Data は [ordered]@{} を受けたいので [hashtable] ではなく [System.Collections.IDictionary]。
+    #   - cid / ip / d はキーごと条件付きで足す（空/未指定なら“キー自体”を出さない）。
+    param(
+        [Parameter(Mandatory)][datetime]$Timestamp,
+        [Parameter(Mandatory)][long]$ElapsedMs,
+        [Parameter(Mandatory)][string]$Sid,
+        [Parameter(Mandatory)][int]$Seq,
+        [ValidateSet('info','warn','error')][string]$Level = 'info',
+        [Parameter(Mandatory)][string]$EventName,
+        [string]$Cid,
+        [string]$Ip,
+        [System.Collections.IDictionary]$Data
+    )
+
+    # ts は InvariantCulture 固定で 'yyyy-MM-ddTHH:mm:ss.fffzzz'（ロケール依存の桁/区切りを排除）。
+    $ts = $Timestamp.ToString('yyyy-MM-ddTHH:mm:ss.fffzzz', [System.Globalization.CultureInfo]::InvariantCulture)
+
+    # フィールド順序を固定（ts, t, sid, seq, lvl, ev）。以降の cid/ip/d は条件付きで末尾に足す。
+    $rec = [ordered]@{
+        ts  = $ts
+        t   = $ElapsedMs
+        sid = $Sid
+        seq = $Seq
+        lvl = $Level
+        ev  = $EventName
+    }
+
+    # 空文字 / $null のときはキー自体を出さない（存在しないメタは行に含めない）。
+    if (-not [string]::IsNullOrEmpty($Cid)) { $rec['cid'] = $Cid }
+    if (-not [string]::IsNullOrEmpty($Ip))  { $rec['ip']  = $Ip }
+    # 空 Data（未指定 or 0件）のときは 'd' を出さない。
+    if ($null -ne $Data -and $Data.Count -gt 0) { $rec['d'] = $Data }
+
+    # -Compress で1行化、-Depth 5 で入れ子（配列/辞書）を潰さず保持する。
+    return ($rec | ConvertTo-Json -Compress -Depth 5)
 }
 
 function Resolve-Route {

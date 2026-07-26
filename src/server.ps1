@@ -101,6 +101,17 @@ function Invoke-WebRequestProcessor {
             }
         }
 
+        # 登録されたアクションだけを ui.action で記録する（switch 不一致の POST や
+        # /select の filename 不一致では $newActionSetTime が立たないため出ない）。
+        # Lobby / Dialog のフォームは cid を送信しないので操作元は ip で追う。
+        # コンソール操作はこのイベントを出さない＝ app.stop の前に ui.action{action:exit}
+        # が無ければコンソール起因の終了と読める。
+        if ($null -ne $newActionSetTime) {
+            $actionData = [ordered]@{ action = ([string]$newResultAction).ToLower() }
+            if ($newResultFile) { $actionData['file'] = $newResultFile }
+            Write-Log -EventName 'ui.action' -Ip $(if ($req.RemoteEndPoint) { $req.RemoteEndPoint.Address.ToString() } else { '' }) -Data $actionData
+        }
+
         try {
             $res.StatusCode = 303
             $res.KeepAlive  = $false

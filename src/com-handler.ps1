@@ -39,6 +39,16 @@ function Watch-RunningPresentation {
     $showSeen    = $false       # スライドショー投影ウィンドウを一度でも観測したか（編集復帰検知用）
     $startupGraceSec = 20        # 起動直後にウィンドウ未検出でも終了扱いしない猶予秒
 
+    # ---- ログ用の差分キャッシュ（COM を追加で叩かないための保持専用） ----
+    # 既に計算済みの位置/投影状態を覚えておき、show.slide の差分判定に使う。
+    # ここで COM を読みに行かないこと（1周あたりの COM 呼び出し回数を増やさない）。
+    $lastPos     = 0             # 直近に観測したスライド位置（show.slide の from）
+    $lastBlack   = $false        # 直近に観測した暗転状態
+    $lastWhite   = $false        # 直近に観測したホワイトアウト状態
+    $transientStreak = 0         # 連続した COM 過渡エラーの件数（先頭1件だけ記録し、残りは件数で集約）
+
+    Write-Log -EventName 'show.start' -Data ([ordered]@{ deck = $TargetFileItem.Name })
+
     try {
         $isFileOpen = $true
         $startTime = [DateTime]::UtcNow
@@ -93,6 +103,8 @@ function Watch-RunningPresentation {
 
                 # ---- 失効した操作権の自動解放（無反応TTL超過） ----
                 if ($lockActive -and (([DateTime]::UtcNow - $ownerSeen).TotalSeconds -gt $ownerTtlSec)) {
+                    # cid を付けない＝サーバ起因の解放。端末が明示的に離した lock.release と区別する。
+                    Write-Log -EventName 'lock.expire' -Data ([ordered]@{ from = $ownerCid; idleSec = $ownerTtlSec })
                     $lockActive = $false
                     $ownerCid   = ''
                 }
@@ -131,6 +143,9 @@ function Watch-RunningPresentation {
                         } catch {}
 
                         $ms = [long][Math]::Floor(([DateTime]::UtcNow - $startTime).TotalMilliseconds)
+                        # PowerPoint 本体側で直接操作された場合もここで位置を拾えるため、
+                        # 次の show.slide の from が実態とずれないよう記録なしで同期する。
+                        $lastPos = $pos
                         $payload = @{
                             ms    = $ms
                             pos   = $pos
@@ -145,6 +160,10 @@ function Watch-RunningPresentation {
                     }
                     'lock-on' {
                         if ((-not $lockActive) -or ($ownerCid -eq $cid)) {
+                            # 同一端末による再取得はハートビート相当なので記録しない（新規取得のみ）。
+                            if (-not $lockActive) {
+                                Write-Log -EventName 'lock.acquire' -Cid $cid -Data ([ordered]@{ from = ''; to = $cid })
+                            }
                             $lockActive = $true; $ownerCid = $cid; $ownerSeen = [DateTime]::UtcNow
                             $payload = @{ ok = $true; mine = $true; busy = $false } | ConvertTo-Json -Compress
                         } else {
@@ -154,12 +173,18 @@ function Watch-RunningPresentation {
                     }
                     'lock-steal' {
                         # 明示的な操作権の奪取（バックアップ端末向け。誤爆防止のためUI側は長押し必須）
+                        # 記録は代入より前に行う（$ownerCid が上書きされる前の値が from に必要）。
+                        Write-Log -EventName 'lock.steal' -Level 'warn' -Cid $cid -Data ([ordered]@{ from = $ownerCid; to = $cid })
                         $lockActive = $true; $ownerCid = $cid; $ownerSeen = [DateTime]::UtcNow
                         $payload = @{ ok = $true; mine = $true } | ConvertTo-Json -Compress
                         Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
                     }
                     'lock-off' {
-                        if ($ownerCid -eq $cid) { $lockActive = $false; $ownerCid = '' }
+                        if ($ownerCid -eq $cid) {
+                            # $ownerCid を空にする前に記録する（解放した端末を from で残すため）。
+                            Write-Log -EventName 'lock.release' -Cid $cid -Data ([ordered]@{ from = $ownerCid })
+                            $lockActive = $false; $ownerCid = ''
+                        }
                         $payload = @{ ok = $true } | ConvertTo-Json -Compress
                         Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
                     }
@@ -171,6 +196,11 @@ function Watch-RunningPresentation {
                         }
                         elseif (-not ($lockActive -and $cid -and ($ownerCid -eq $cid))) {
                             # ロックOFF or 操作権が他端末 → サーバ側で拒否（多層防御）
+                            # 拒否は正常な多層防御の結果であり通常は記録しない。'all' のときだけ
+                            # 「押したのに効かなかった」の追跡用に残す。
+                            if ($script:SlideLogMode -eq 'all') {
+                                Write-Log -EventName 'show.slide' -Level 'warn' -Cid $cid -Data ([ordered]@{ cmd = $cmd; rejected = 'locked'; owner = $ownerCid })
+                            }
                             $payload = @{ ok = $false; locked = $true } | ConvertTo-Json -Compress
                             Send-HttpResponse -Response $res -Content $payload -ContentType "application/json; charset=utf-8"
                         }
@@ -222,6 +252,20 @@ function Watch-RunningPresentation {
                                 }
                             } catch {}
 
+                            # 変化判定を位置だけで行わないこと。blackout / whiteout は位置を
+                            # 変えずに投影状態を変えるため、位置比較だけだと暗転操作が記録から消える。
+                            # ok=false（操作失敗）は状態が変わらなくても必ず記録する。既定の change
+                            # モードで「押したのに動かなかった」が無音になるのを防ぐ（頻度はユーザーの
+                            # タップ回数で有界。ポーリング経路ではないためバーストしない）。
+                            $slideChanged = ($pos -ne $lastPos) -or ($projBlack -ne $lastBlack) -or ($projWhite -ne $lastWhite)
+                            if ($script:SlideLogMode -eq 'all' -or $slideChanged -or -not $ok) {
+                                Write-Log -EventName 'show.slide' -Cid $cid -Data ([ordered]@{
+                                    cmd = $cmd; from = $lastPos; to = $pos
+                                    black = [bool]$projBlack; white = [bool]$projWhite; ok = [bool]$ok
+                                })
+                            }
+                            $lastPos = $pos; $lastBlack = $projBlack; $lastWhite = $projWhite
+
                             $payload = @{
                                 ok    = [bool]$ok; locked = $false
                                 pos   = $pos; total = $totalSlides
@@ -238,8 +282,9 @@ function Watch-RunningPresentation {
                         # 対照的だが、これは設計判断であって漏れではない。owner 必須にすると操作権の
                         # 奪取を経由できてしまい、緊急停止としての有効性も落ちるため採用しない。
                         # 誤操作は UI の 1500ms hold と停止後の 302 リダイレクトで緩和する。
-                        # 事後解析用のログ記録は、追記専用ログ基盤を導入する際に扱う。
+                        # 事後解析用に show.stop を記録する（誰が押したかは cid / ip で追う）。
                         $status = "ManualStop"
+                        Write-Log -EventName 'show.stop' -Cid $cid -Ip $(if ($req.RemoteEndPoint) { $req.RemoteEndPoint.Address.ToString() } else { '' })
                         try {
                             $res.StatusCode = 302
                             $res.KeepAlive  = $false
@@ -282,6 +327,7 @@ function Watch-RunningPresentation {
 
             # 2. PowerPointの状態確認
             $stillOpen = $false
+            $sawTransient = $false
             try {
                 $null = $PptApp.Presentations.Count
                 foreach ($p in $PptApp.Presentations) {
@@ -303,11 +349,33 @@ function Watch-RunningPresentation {
                 )
                 if ($hr -and ($transientHResults -contains $hr)) {
                     $stillOpen = $true
+                    # 先頭1件だけ記録する。この catch は再生中ループの毎周（10〜20回/秒）走りうるため、
+                    # 毎回記録すると 90 分で最大 5 万行に達し、events が数百行という前提が崩れる。
+                    # 抑制した分は復帰時の com.recovery が suppressed 件数としてまとめて残す。
+                    $sawTransient = $true
+                    if ($transientStreak -eq 0) {
+                        Write-Log -EventName 'com.transient' -Level 'warn' -Data ([ordered]@{ hr = ('0x' + $hr.ToString('X8')) })
+                    }
+                    $transientStreak++
                     Write-Host " [Warning] COM transient error (HResult: 0x$($hr.ToString('X8')), presentation assumed still open)" -ForegroundColor Yellow
                 } else {
                     $stillOpen = $false
+                    Write-Log -EventName 'com.fatal' -Level 'error' -Data ([ordered]@{
+                        hr = $(if ($hr) { '0x' + $hr.ToString('X8') } else { $null })
+                        afterTransient = $transientStreak
+                        msg = $_.Exception.Message
+                    })
+                    # 件数は afterTransient に載せたので streak を閉じる。ここで 0 に戻さないと
+                    # 直後の復帰判定が成立し、fatal の次の行に偽の com.recovery が出る。
+                    $transientStreak = 0
                     Write-Host " [Warning] COM fatal error (HResult: $(if($hr){'0x'+$hr.ToString('X8')}else{'N/A'}), presentation assumed closed): $($_.Exception.Message)" -ForegroundColor Yellow
                 }
+            }
+
+            # 過渡エラーが続いた後、この周で catch に入らなかった＝復帰。抑制した件数をここで残す。
+            if ($transientStreak -gt 0 -and -not $sawTransient) {
+                Write-Log -EventName 'com.recovery' -Level 'warn' -Data ([ordered]@{ suppressed = $transientStreak })
+                $transientStreak = 0
             }
 
             if (-not $stillOpen) {
@@ -334,6 +402,10 @@ function Watch-RunningPresentation {
         # HttpListener はメインフロー内で一元管理するため、ここでは Stop/Close しない
     }
 
+    # 中断か完走かは reason だけでは読めないため、終了時点の位置と総数を併記する
+    # （例: 200枚中43枚目で ClosedByUser ＝中断）。
+    Write-Log -EventName 'show.end' -Data ([ordered]@{ reason = $status; pos = $lastPos; total = $totalSlides })
+
     return $status
 }
 
@@ -353,10 +425,14 @@ function Set-PptKillOnClose {
         }
         if ($pptPid -gt 0 -and ($PreExistingPids -notcontains $pptPid)) {
             [void][JobGuard]::Guard($pptPid)
+            Write-Log -EventName 'ppt.guard' -Data ([ordered]@{ pid = $pptPid; bound = $true })
         } else {
             Write-Host " [Info] Skipping kill-on-close binding (existing instance or PID unresolved)." -ForegroundColor DarkGray
+            # bound=false は「異常終了時に PowerPoint が残る」ことを意味するため、事後解析で重要。
+            Write-Log -EventName 'ppt.guard' -Data ([ordered]@{ pid = $pptPid; bound = $false })
         }
     } catch {
         Write-Warning "Could not bind PowerPoint to kill-on-close job: $($_.Exception.Message)"
+        Write-Log -EventName 'ppt.guard' -Level 'warn' -Data ([ordered]@{ bound = $false; msg = $_.Exception.Message })
     }
 }
