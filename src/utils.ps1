@@ -222,6 +222,51 @@ function Read-RequestBody {
     }
 }
 
+function Format-LogEvent {
+    # 1本の NDJSON 行（文字列）を組み立てる純粋関数。COM / HttpListener / ファイル IO に触れない。
+    # Resolve-Route / Resolve-FinishDestination の [pscustomobject] 返却パターンは踏襲せず、
+    # ここでは ConvertTo-Json -Compress で必ず「1行の文字列」を返す（呼び出し側 Write-Log が
+    # そのまま WriteLine するため）。
+    #   - $Timestamp に既定値は付けない: 付けると引数省略時に内部で時刻を取得することになり
+    #     純粋関数でなくなる。呼び出し側（Write-Log）が必ず値を渡す。
+    #   - $EventName は $Event（PowerShell 自動変数）と衝突するため使用不可。
+    #   - $Data は [ordered]@{} を受けたいので [hashtable] ではなく [System.Collections.IDictionary]。
+    #   - cid / ip / d はキーごと条件付きで足す（空/未指定なら“キー自体”を出さない）。
+    param(
+        [Parameter(Mandatory)][datetime]$Timestamp,
+        [Parameter(Mandatory)][long]$ElapsedMs,
+        [Parameter(Mandatory)][string]$Sid,
+        [Parameter(Mandatory)][int]$Seq,
+        [ValidateSet('info','warn','error')][string]$Level = 'info',
+        [Parameter(Mandatory)][string]$EventName,
+        [string]$Cid,
+        [string]$Ip,
+        [System.Collections.IDictionary]$Data
+    )
+
+    # ts は InvariantCulture 固定で 'yyyy-MM-ddTHH:mm:ss.fffzzz'（ロケール依存の桁/区切りを排除）。
+    $ts = $Timestamp.ToString('yyyy-MM-ddTHH:mm:ss.fffzzz', [System.Globalization.CultureInfo]::InvariantCulture)
+
+    # フィールド順序を固定（ts, t, sid, seq, lvl, ev）。以降の cid/ip/d は条件付きで末尾に足す。
+    $rec = [ordered]@{
+        ts  = $ts
+        t   = $ElapsedMs
+        sid = $Sid
+        seq = $Seq
+        lvl = $Level
+        ev  = $EventName
+    }
+
+    # 空文字 / $null のときはキー自体を出さない（存在しないメタは行に含めない）。
+    if (-not [string]::IsNullOrEmpty($Cid)) { $rec['cid'] = $Cid }
+    if (-not [string]::IsNullOrEmpty($Ip))  { $rec['ip']  = $Ip }
+    # 空 Data（未指定 or 0件）のときは 'd' を出さない。
+    if ($null -ne $Data -and $Data.Count -gt 0) { $rec['d'] = $Data }
+
+    # -Compress で1行化、-Depth 5 で入れ子（配列/辞書）を潰さず保持する。
+    return ($rec | ConvertTo-Json -Compress -Depth 5)
+}
+
 function Resolve-Route {
     # HTTP パス + メソッド → ルート種別を返す純粋関数（COM / HttpListener に触れない）。
     # 分類順序は Watch-RunningPresentation の従来の if/elseif チェーンと 1:1 で一致させること。
