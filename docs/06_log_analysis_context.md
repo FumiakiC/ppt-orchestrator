@@ -60,7 +60,7 @@ ppt-orchestrator は、**外部ソフトを導入できない Windows 環境で�
 | `ts` | string | ISO 8601 + オフセット付きのローカル時刻 | オフセットを含むので TZ を推測しなくてよい |
 | `t` | number | **セッション開始からの経過ミリ秒** | 「起動何分後に落ちたか」を引き算せずに読める。時刻計算より先にこちらを使う |
 | `sid` | string | セッション ID（起動時刻ベース）。1 起動 = 1 値 | **最初のフィルタは常にこれ** |
-| `seq` | number | セッション内の通番（1 から単調増加） | **番号が飛んでいたらログの欠落**。書き込み失敗か強制終了を疑う |
+| `seq` | number | セッション内の通番（1 から単調増加） | **番号が飛んでいたら行の欠落**（消失・改ざん）。書き込み失敗は穴ではなく**ログの途絶**として現れる（§4.1 注記）。強制終了でも番号は飛ばない（最後に書けた行まで連番のまま終わる） |
 | `lvl` | string | `info` / `warn` / `error` | `warn` は「想定内の異常」を含む（§8 参照）。`warn` の存在自体は障害を意味しない |
 | `ev` | string | **固定語彙のイベント名**（`<domain>.<action>`）。§4 が全件 | 自然文ではない。語彙外の値が出たら本書が古い |
 | `cid` | string \| null | 操作元クライアント ID。端末単位の識別子 | 端末の同一性判定はこれで行う。IP は NAT・DHCP で変わりうる。**`cid` があるイベントは端末起因、無いイベントはサーバ起因**（例: `lock.release` は端末が離した／`lock.expire` は TTL 超過でサーバが解放した） |
@@ -79,15 +79,17 @@ ppt-orchestrator は、**外部ソフトを導入できない Windows 環境で�
 |---|---|---|---|
 | `log.meta` | info | `schema`, `host`, `version`, `port`, `slideLogMode` | **各ファイルの先頭 1 行**。スキーマ版とビルド版。これが無いファイルは途中から始まっている |
 | `app.start` | info | `admin`, `targetFolder` | 起動。`admin:false` なら URLACL / Firewall 設定が入っていない可能性 |
-| `app.stop` | info | `reason` | 記録された終了。`reason` は `normal`（通常終了）/ `not-admin`（管理者権限なし）/ `no-target-folder`（対象フォルダ不存在）/ `ppt-launch-failed`（PowerPoint 起動失敗。直前の `ppt.launch.fail` を見る）。**`app.stop` が無いまま終わっているログは異常終了**（クラッシュ・強制終了・電源断） |
+| `app.stop` | info | `reason` | 記録された終了。`reason` は `normal`（通常終了）/ `error`（未処理例外による終了。直前のイベントが手がかりになる）/ `not-admin`（管理者権限なし）/ `no-target-folder`（対象フォルダ不存在）/ `ppt-launch-failed`（PowerPoint 起動失敗。直前の `ppt.launch.fail` を見る）。**`app.stop` が無いまま終わっているログは異常終了**（クラッシュ・強制終了・電源断・ログ書き込み停止） |
 | `net.binding` | info | `url`, `port`, `adapters[]` | 実際に待ち受けた URL と、案内した IP の一覧。「繋がらない」の切り分けはまずここ |
 | `net.listener.start` | info | — | 受付開始 |
 | `net.listener.stop` | info | — | 受付終了 |
 | `net.listener.error` | error | `msg` | listener 自体の異常。ポート競合・URLACL 不足が典型 |
 
 > ログの書き込み失敗はイベントとしては記録されない（書けない状況で書けないため）。
-> `seq` は書き込みを試みる前に消費されるので、**失敗は必ず `seq` の穴として現れる**（§3）。
-> Console 側には最初の 1 回だけ警告が出る。
+> **最初の書き込み失敗の時点でロギングは停止する**。以降のイベントは記録されず、
+> ログは途中で途絶する（`app.stop` も残らないため、形の上では強制終了と区別できない）。
+> Console 側には最初の 1 回だけ警告（`Logging disabled after write failure`）が出るので、
+> この警告の有無で切り分ける（§8）。
 
 ### 4.2 認証
 
@@ -243,7 +245,7 @@ log.meta → app.start → ppt.launch → ppt.guard → net.listener.start → n
 | 全端末が同時にもたつく | `http.poll.rollup` の `p95` | サーバ側の詰まり。単一スレッド逐次処理のため全端末に同時に出る |
 | 特定端末だけ遅い | 同上（`p95` は正常のはず） | ネットワーク側。サーバは無関係 |
 | ファイルが `finish/` に移動していない | `file.finish.fail` / `.retry` | ロック解放待ちの 3 回再試行に失敗。元ファイルは残っている |
-| ログが途中で切れている | `seq` の飛び / 最終行が `app.stop` か | 穴があれば書き込み失敗、`app.stop` が無ければ異常終了かローテーション失敗 |
+| ログが途中で切れている | 最終行が `app.stop` か / Console 警告の有無 | `app.stop` が無ければ異常終了・書き込み停止・ローテーション失敗のいずれか。書き込み停止なら Console に `Logging disabled after write failure` が出ている。`reason:"error"` の `app.stop` で終わっている場合は未処理例外による終了（ログ自体は最後まで書けている） |
 
 ---
 
