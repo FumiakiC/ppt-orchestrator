@@ -254,8 +254,11 @@ function Watch-RunningPresentation {
 
                             # 変化判定を位置だけで行わないこと。blackout / whiteout は位置を
                             # 変えずに投影状態を変えるため、位置比較だけだと暗転操作が記録から消える。
+                            # ok=false（操作失敗）は状態が変わらなくても必ず記録する。既定の change
+                            # モードで「押したのに動かなかった」が無音になるのを防ぐ（頻度はユーザーの
+                            # タップ回数で有界。ポーリング経路ではないためバーストしない）。
                             $slideChanged = ($pos -ne $lastPos) -or ($projBlack -ne $lastBlack) -or ($projWhite -ne $lastWhite)
-                            if ($script:SlideLogMode -eq 'all' -or $slideChanged) {
+                            if ($script:SlideLogMode -eq 'all' -or $slideChanged -or -not $ok) {
                                 Write-Log -EventName 'show.slide' -Cid $cid -Data ([ordered]@{
                                     cmd = $cmd; from = $lastPos; to = $pos
                                     black = [bool]$projBlack; white = [bool]$projWhite; ok = [bool]$ok
