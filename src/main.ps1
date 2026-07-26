@@ -323,7 +323,12 @@ try {
     Write-Host "System terminated." -ForegroundColor Green
     Write-Host ""
 
-    Write-Log -EventName 'app.stop' -Data ([ordered]@{ reason = 'normal' })
+    # この finally は未処理例外でメインループを抜けた場合にも実行される。常に 'normal' を
+    # 書くと異常終了が正常終了に偽装され、「app.stop が無い＝異常終了」（docs/06 §7）の
+    # 切り分けもすり抜ける。Exit 要求でループを抜けたか（$exitLoop）から導出する。
+    # $exitLoop は try 先頭で $false に初期化済みのため、ここでは常に定義されている。
+    $stopReason = if ($exitLoop) { 'normal' } else { 'error' }
+    Write-Log -EventName 'app.stop' -Data ([ordered]@{ reason = $stopReason })
     Close-Log
 
     [Environment]::Exit(0)
