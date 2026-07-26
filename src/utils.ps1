@@ -110,6 +110,9 @@ function Move-ToFinishIfPending {
         # Do not WildcardPattern::Escape here: -Destination receives a literal path, and escaping would corrupt file names like deck[1].pptx.
         $destinationPath = Join-Path -Path $FinishFolderPath -ChildPath $destinationName
     } catch {
+        # 帰結はリトライ全滅と同じ「元ファイル未移動」なので同じ file.finish.fail を使い、
+        # stage で「移動前の移動先解決段階で失敗した」ことを区別する。
+        Write-Log -EventName 'file.finish.fail' -Level 'error' -Data ([ordered]@{ msg = $_.Exception.Message; stage = 'resolve' })
         Write-Warning "Resolve finish destination failed: $($_.Exception.Message)"
         return $TargetFileItem
     }
@@ -117,16 +120,30 @@ function Move-ToFinishIfPending {
     Write-Host " >> Moving to finished folder..." -ForegroundColor Gray
     for ($attempt = 0; $attempt -le $delays.Count; $attempt++) {
         try {
-            if (-not (Test-Path -LiteralPath $sourcePath)) { return $TargetFileItem }
+            if (-not (Test-Path -LiteralPath $sourcePath)) {
+                # リトライ発行後にソースが消えた（他所で移動/削除された）場合は終端イベントを残す。
+                # file.finish.retry の後に ok / fail のどちらも無いとログ欠落に見えるため。
+                # attempt 0 での消失はループ前の冪等ガードと同じ扱い（記録しない）。
+                if ($attempt -gt 0) {
+                    Write-Log -EventName 'file.finish.fail' -Level 'error' -Data ([ordered]@{ msg = 'source-missing' })
+                }
+                return $TargetFileItem
+            }
 
-            return Move-Item -LiteralPath $sourcePath -Destination $destinationPath -PassThru -ErrorAction Stop
+            $moved = Move-Item -LiteralPath $sourcePath -Destination $destinationPath -PassThru -ErrorAction Stop
+            # renamed = 同名衝突でタイムスタンプ名になったか（Resolve-FinishDestination の結果を使い回す）。
+            Write-Log -EventName 'file.finish.ok' -Data ([ordered]@{ dest = $destinationName; renamed = ($destinationName -ne $sourceFileName) })
+            return $moved
         } catch {
             if ($attempt -ge $delays.Count) {
+                Write-Log -EventName 'file.finish.fail' -Level 'error' -Data ([ordered]@{ msg = $_.Exception.Message })
                 Write-Warning "Move failed: $($_.Exception.Message)"
                 return $TargetFileItem
             }
 
             $delay = [int]$delays[$attempt]
+            # attempt は 1 始まりで記録する（辞書 §4.6：200/400/800ms の 3 回）。
+            Write-Log -EventName 'file.finish.retry' -Level 'warn' -Data ([ordered]@{ attempt = ($attempt + 1); delayMs = $delay })
             if ($delay -gt 0) { Start-Sleep -Milliseconds $delay }
         }
     }
