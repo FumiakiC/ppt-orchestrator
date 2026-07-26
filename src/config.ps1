@@ -237,8 +237,8 @@ function New-DirectoryIfMissing {
 # Defined here (not utils.ps1) because config.ps1 is concatenated first; keeping the
 # writer state and lifecycle functions together with New-DirectoryIfMissing (which
 # Open-LogFile depends on) avoids forward references at load time.
-# This block only *defines* the machinery. No execution path is instrumented yet;
-# call sites (Write-Log invocations) are intentionally added in a later change.
+# This block only *defines* the machinery; call sites across the app emit Write-Log events
+# to append NDJSON diagnostics (startup/auth/slide/lock/COM recovery, etc.).
 $script:LogSchema = 1                # bump when the NDJSON line shape changes
 $script:LogWriter = $null           # [System.IO.StreamWriter] or $null when closed
 $script:LogDir    = $null           # directory that holds the dated log files
