@@ -322,6 +322,11 @@ function Write-Log {
         # the presentation flow. There is deliberately no 'log.write.fail' event — if we
         # cannot write, we cannot write that either. Warn once on the host (best effort)
         # so the operator has a hint, then stay silent to avoid flooding the console.
+        # Disable logging for real: release the writer so later calls short-circuit on the
+        # null guard above. Keeping a broken writer would retry (and fail) on every event,
+        # contradicting the 'disabled' warning below and docs/06 §8 (which tells operators
+        # to use this warning to diagnose a log that stops mid-session).
+        Close-Log
         if (-not $script:LogWarned) {
             $script:LogWarned = $true
             Write-Host " [Warning] Logging disabled after write failure: $($_.Exception.Message)" -ForegroundColor Yellow
