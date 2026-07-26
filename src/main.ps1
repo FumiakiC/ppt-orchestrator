@@ -9,9 +9,27 @@
 # ==============================================================================
 # メインフロー
 # ==============================================================================
+# 管理者チェックより前にログを開く。非管理者で即 exit するケースこそ
+# 「起動したのに何も起きない」の切り分けに必要なため。Initialize-Log は失敗しても
+# throw しない設計なので、ProgramData に書けなくても起動は止まらない。
+# 変数名を $logDir にしないこと: PowerShell の変数名は大文字小文字を区別しないため
+# config.ps1 の $script:LogDir と同一変数になる。現状は同じ値を書き戻すだけで無害だが、
+# access ログ用のディレクトリ状態が増えた時点で衝突が実害になる。
+$eventsLogDir = Join-Path (Split-Path -Parent $StatePath) 'logs'
+Initialize-Log -Directory $eventsLogDir -Meta ([ordered]@{
+    schema       = $script:LogSchema
+    host         = $env:COMPUTERNAME
+    port         = $WebPort
+    slideLogMode = $script:SlideLogMode
+})
+
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+$isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+Write-Log -EventName 'app.start' -Data ([ordered]@{ admin = [bool]$isAdmin; targetFolder = $TargetFolderPath })
+if (-not $isAdmin) {
     Write-Warning "Administrator privileges required. Please run PowerShell as Administrator."
+    Write-Log -EventName 'app.stop' -Data ([ordered]@{ reason = 'not-admin' })
+    Close-Log
     Start-Sleep 3
     exit
 }
@@ -52,6 +70,7 @@ for ($i = 1; $i -le 3; $i++) {
     try { $pptApp = New-Object -ComObject PowerPoint.Application; break }
     catch { $lastErr = $_; if ($i -lt 3) { Start-Sleep -Milliseconds 1500 } }
 }
+if ($pptApp) { Write-Log -EventName 'ppt.launch' -Data ([ordered]@{ attempts = $i }) }
 
 # If still not up, optionally clear stale instances (opt-in) and retry once.
 if (-not $pptApp) {
@@ -61,6 +80,9 @@ if (-not $pptApp) {
         $stale | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Milliseconds 1000
         try { $pptApp = New-Object -ComObject PowerPoint.Application } catch { $lastErr = $_ }
+        # この経路の成功は上の ppt.launch を通らないため、ここで別途記録する。
+        # 記録しないと PowerPoint は起動しているのにログ上は「一度も起動していない」ように見える。
+        if ($pptApp) { Write-Log -EventName 'ppt.recover' -Level 'warn' -Data ([ordered]@{ killedStale = $stale.Count }) }
     }
 }
 
@@ -90,7 +112,16 @@ try {
     try {
         $listener.Start()
         $script:ContextTask = Get-SafeContextAsync -Listener $listener
+        Write-Log -EventName 'net.listener.start' -Data ([ordered]@{ port = $WebPort })
+        # Get-LocalActiveIPs は @{ InterfaceAlias; IPAddress } のハッシュテーブル配列を返す。
+        # "$_" で文字列化すると System.Collections.Hashtable になるため、alias / ip を明示展開する。
+        Write-Log -EventName 'net.binding' -Data ([ordered]@{
+            url      = "http://+:$WebPort/"
+            port     = $WebPort
+            adapters = @(Get-LocalActiveIPs | ForEach-Object { [ordered]@{ alias = $_.InterfaceAlias; ip = $_.IPAddress } })
+        })
     } catch {
+        Write-Log -EventName 'net.listener.error' -Level 'error' -Data ([ordered]@{ port = $WebPort; msg = $_.Exception.Message })
         Write-Warning "Web control is unavailable due to port conflict. Only keyboard operations are available."
     }
 
@@ -226,6 +257,7 @@ try {
             if ($listener.IsListening) { $listener.Stop() }
             $listener.Close()
             Start-Sleep -Milliseconds 200
+            Write-Log -EventName 'net.listener.stop'
         } catch {}
     }
 
@@ -247,6 +279,9 @@ try {
 
     Write-Host "System terminated." -ForegroundColor Green
     Write-Host ""
+
+    Write-Log -EventName 'app.stop' -Data ([ordered]@{ reason = 'normal' })
+    Close-Log
 
     [Environment]::Exit(0)
 }

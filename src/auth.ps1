@@ -19,6 +19,7 @@ function Invoke-AuthHandler {
     }
 
     if ($script:AuthFailedTracker.ContainsKey($ip) -and (Get-Date) -lt $script:AuthFailedTracker[$ip].AddSeconds(1)) {
+        Write-Log -EventName 'auth.throttled' -Level 'warn' -Ip $ip
         $authHtml = $script:HtmlTemplates.AuthView.Replace('%%BGCOLOR%%', '#0f2027').Replace('%%AUTH_ERROR%%', 'error')
         Send-HttpResponse -Response $Response -Content $authHtml
         return $false
@@ -26,6 +27,7 @@ function Invoke-AuthHandler {
     $submittedPin = Get-PinFromBody $Body
     if ($submittedPin -ne '' -and $submittedPin -eq [string]$script:AuthPin) {
         $script:AuthFailedTracker.Remove($ip)
+        Write-Log -EventName 'auth.ok' -Ip $ip
         $Response.Headers.Add("Set-Cookie", "SessionToken=$script:SessionToken; HttpOnly; Path=/; SameSite=Strict")
         $Response.StatusCode = 302
         $Response.Headers.Add("Location", "/")
@@ -33,6 +35,8 @@ function Invoke-AuthHandler {
         return $true
     }
     $script:AuthFailedTracker[$ip] = (Get-Date)
+    # 記録するのは「失敗した事実」と送信元 IP のみ。入力された PIN は決してログに載せない。
+    Write-Log -EventName 'auth.fail' -Level 'warn' -Ip $ip
     $authHtml = $script:HtmlTemplates.AuthView.Replace('%%BGCOLOR%%', '#0f2027').Replace('%%AUTH_ERROR%%', 'error')
     Send-HttpResponse -Response $Response -Content $authHtml
     return $false
