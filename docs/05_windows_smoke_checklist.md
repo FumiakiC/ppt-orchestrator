@@ -57,14 +57,24 @@ PR 本文にはこの表から**該当項目だけ**を抜き出して貼り、�
 | 9 | 操作 | next / prev / first / last / blackout / whiteout が機能する | ☐ |
 | 10 | 最終スライド | next が抑止される（`atEnd`） | ☐ |
 | 11 | 復帰経路 | `/stop` / スライドショー終了 / PowerPoint 手動 close の**各 path**で Dialog または Lobby に戻る | ☐ |
-| 12 | finish 移動 | 正しく移動する。同名 collision（`finish/` に同名を先置きした回）では既存を**上書きせず**、新規が timestamp 名 `name_yyyyMMdd-HHmmss.ext` で退避される（PR-F / `v1.1.35`）。角括弧を含むデッキ名（例 `deck[1].pptx`）はリテラル移動され、`deck1.pptx` 等を上書きしない | ☐ |
-| 13 | file lock | ファイルが開かれている状態での retry が期待どおり | ☐ |
+| 12 | finish 移動 | 正しく移動する。同名 collision（`finish/` に同名を先置きした回）では既存を**上書きせず**、新規が timestamp 名 `name_yyyyMMdd-HHmmss.ext` で退避される（PR-F / `v1.1.35`）。角括弧を含むデッキ名（例 `deck[1].pptx`）はリテラル移動され、`deck1.pptx` 等を上書きしない。events ログに `file.finish.ok` が記録され、collision 回は `renamed:true` になる | ☐ |
+| 13 | file lock | ファイルが開かれている状態での retry が期待どおり。events ログに `file.finish.retry`（`attempt` 1始まり / `delayMs`）が記録され、解放後は `file.finish.ok`、3 回全滅時は `file.finish.fail` で終端する | ☐ |
 | 14 | PC Console | Start / Select / Page / Update Network / Retry / Lobby / Exit が動く | ☐ |
 | 15 | 瞬断耐性 | スマホの Wi-Fi を一時 OFF → **投影は止まらず**、復帰後に offline overlay が消える | ☐ |
 | 16 | 終了時 cleanup | PowerPoint / listener / URLACL / Firewall rule がすべて片付く | ☐ |
 | 17 | 巻き込み防止 | **事前に手動で開いておいた別の PowerPoint を kill しない**（JobObject の道連れ kill が自分の起動分のみ） | ☐ |
 | 18 | ログ | token / Cookie が Console・ログに出ない。⚠ PIN の Console 表示は仕様（運用者が参照） | ☐ |
 | 19 | 角括弧フォルダ | 対象フォルダ名が `aa[1]`（**ASCII 角括弧**）でも起動でき、デッキが列挙され、`aa[1]\finish\` が作成される。全角 `「」【】［］` は PowerShell のワイルドカードではないため代用不可（PR-K / `v1.1.46`） | ☐ |
+| 20 | イベントログ初期行 | `%ProgramData%\ppt-orchestrator\logs\events-yyyyMMdd.jsonl` が生成され、先頭行が `log.meta`（`version` がビルド版、`slideLogMode` が起動オプションと一致）、次が `app.start` になっている | ☐ |
+| 21 | 正常終了ログ終端 | 正常終了（Exit）後、ログの最終行が `app.stop`（`reason:"normal"`）である。Web の `/exit` で終了した回は直前に `ui.action`（`action:"exit"`）があり、コンソール Q 終了の回には無い | ☐ |
+| 22 | logs ACL | `logs` フォルダの ACL が Administrators + SYSTEM のみ（親からの継承）である。一般ユーザー権限のエクスプローラー / PowerShell では開けないことを確認する | ☐ |
+| 23 | `-SlideLogMode all` の拒否記録 | `-SlideLogMode all` で起動し、ロック未取得のままスライド送りを試すと `show.slide` に `rejected:"locked"` が記録される。既定（`change`）では記録されない | ☐ |
+| 24 | COM 過渡エラー抑制（機会確認） | 再生中に PowerPoint を一時的にビジーにした場合、`com.transient` が連続で大量に出ず 1 件に抑制され、応答再開時に `com.recovery`（`suppressed > 0`）が記録される。Console 側の警告は毎周出たままでよい | ☐ |
+| 25 | Web 操作の記録 | Web から start / select / next / retry / lobby / exit を行うと `ui.action`（`action`、`select` のみ `file` 付き、`ip` あり・`cid` なし）が記録される。コンソールの同等操作では記録されない | ☐ |
+| 26 | COM 自動復旧 | Lobby 待機中にタスクマネージャで POWERPNT を強制終了 → 次のデッキ開始で `ppt.dead` → `ppt.relaunch` → `ppt.guard` が順に記録され、再生が正常に始まる | ☐ |
+| 27 | 開けないデッキ | 壊れた `.pptx`（例: テキストファイルをリネーム）を開始すると `show.error`（`deck`, `hr`, `msg`）が記録され Lobby に戻る。`show.start` は出ない | ☐ |
+
+> 注意: カスタム `-StatePath` がネットワークパス（UNC / マップドドライブ）の場合、ログは追記のたびに SMB 往復が発生し数百 ms ブロックしうる。既定の `%ProgramData%`（ローカル）では該当しない。
 
 ## 5. 記録の残し方
 
