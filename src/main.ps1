@@ -161,6 +161,12 @@ try {
                     if (!$targetFileItem) {
                         $targetFileItem = $finishedFiles | Where-Object { $_.Name -eq $name } | Select-Object -First 1
                     }
+                    if (!$targetFileItem) {
+                        # 選択されたファイルが表示後に手動移動/削除された等。無音だと
+                        # 「押したのに始まらない」が事後に再構成できない。記録位置をここ（Select アーム内）に
+                        # 限定するのは、下の continue 直前に置くと Exit 経路でも誤発火するため。
+                        Write-Log -EventName 'ui.select.miss' -Level 'warn' -Data ([ordered]@{ name = $name })
+                    }
                 }
             }
         }
@@ -177,6 +183,13 @@ try {
             $null = $pptApp.Name
             $null = $pptApp.Version
         } catch {
+            # HResult は例外オブジェクトからの読み出し（COM 呼び出しではない）。書式は com-handler の
+            # com.fatal と同じ '0x' + X8 に揃える。
+            $hrDead = $_.Exception.HResult
+            Write-Log -EventName 'ppt.dead' -Level 'warn' -Data ([ordered]@{
+                hr  = $(if ($hrDead) { '0x' + $hrDead.ToString('X8') } else { $null })
+                msg = $_.Exception.Message
+            })
             Write-Host " [Warning] PowerPoint COM object is dead. Attempting recovery..." -ForegroundColor Yellow
             Release-ComObject -obj $pptApp
             $pptApp = $null
@@ -187,9 +200,17 @@ try {
                 $pptApp = New-Object -ComObject PowerPoint.Application
                 $pptApp.Visible = [Microsoft.Office.Core.MsoTriState]::msoTrue
                 try { $pptApp.DisplayAlerts = 1 } catch {}   # 1 = ppAlertsNone（PIA非依存のため数値リテラル）
+                # ppt.dead と対になる復旧成功。直後の Set-PptKillOnClose が ppt.guard で紐付け結果を残す。
+                Write-Log -EventName 'ppt.relaunch'
                 Write-Host " [System] PowerPoint COM object recovered successfully." -ForegroundColor Green
                 Set-PptKillOnClose -PptApp $pptApp -PreExistingPids $recoveryPreexisting
             } catch {
+                # これが無いと「選んだのに再生されず Lobby に戻る」理由がログから消える。
+                $hrRelaunch = $_.Exception.HResult
+                Write-Log -EventName 'ppt.relaunch.fail' -Level 'error' -Data ([ordered]@{
+                    hr  = $(if ($hrRelaunch) { '0x' + $hrRelaunch.ToString('X8') } else { $null })
+                    msg = $_.Exception.Message
+                })
                 Write-Host " [Error] Failed to recover PowerPoint: $($_.Exception.Message)" -ForegroundColor Red
                 Start-Sleep 3
                 continue
@@ -250,6 +271,15 @@ try {
             }
 
         } catch {
+            # Presentations.Open / SlideShowSettings.Run の失敗は Watch-RunningPresentation に
+            # 到達せず show.start すら出ない。この catch が壊れた pptx ・開けないファイルの
+            # 唯一の痕跡になる（deck / hr は計算済み値の使い回し）。
+            $hrShow = $_.Exception.HResult
+            Write-Log -EventName 'show.error' -Level 'error' -Data ([ordered]@{
+                deck = $targetFileItem.Name
+                hr   = $(if ($hrShow) { '0x' + $hrShow.ToString('X8') } else { $null })
+                msg  = $_.Exception.Message
+            })
             Write-Host " [Error] $($_.Exception.Message)" -ForegroundColor Red
             if ($presentation) { try { $presentation.Close() } catch {} }
             Start-Sleep 2
