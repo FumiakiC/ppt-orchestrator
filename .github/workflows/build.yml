@@ -50,7 +50,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Run Build Script
         shell: pwsh
@@ -109,7 +109,7 @@ jobs:
           Write-Host "✅ Created ppt-orchestrator-ready-to-use.zip" -ForegroundColor Green
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ppt-orchestrator-package
           path: ppt-orchestrator-ready-to-use.zip
@@ -131,12 +131,12 @@ jobs:
 
     steps:
       - name: Download built ZIP
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ppt-orchestrator-package
 
       - name: Create GitHub Release and Upload ZIP
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.version.outputs.version }}
           name: Release ${{ needs.version.outputs.version }}
